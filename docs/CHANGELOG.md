@@ -1,3 +1,25 @@
+## [0.14.2] - 2026-05-10
+
+### Fixed
+
+- Bar gradients now reset stale visuals when a per-bar color is removed, cleared, canceled, or a bar frame is reused
+- Edit Mode dialog hooks now install even when Blizzard creates `EditModeSystemSettingsDialog` after Enhanced CDM's initial setup
+- Click feedback glow now resizes when CDM icon size changes instead of keeping the first cached overlay size
+
+&nbsp;
+
+### Changed
+
+- Edit Mode addon panels now use local widget references instead of creating `EnhancedCDM*` globals
+- Bar gradient slash commands now reject out-of-range RGB values and trailing arguments
+- Test runner now loads `EditMode.lua` with expanded WoW stubs for hook and panel regression coverage
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.14.1] - 2026-03-27
 
 ### Fixed

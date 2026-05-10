@@ -6,6 +6,7 @@ local barsEditModePanel
 local essentialHotkeysPanel
 local utilityHotkeysPanel
 local editModeHooked = false
+local hookedDialog
 
 -- Layout constants shared by all panels
 local LABEL_WIDTH    = 110
@@ -29,6 +30,7 @@ local POSITION_ORDER = { "TOPLEFT", "TOP", "TOPRIGHT", "RIGHT", "BOTTOMRIGHT", "
 local EMBED_COL_WIDTH = 380
 local activeEmbeddedPanel = nil
 local wrapperFrame = nil
+local InstallDialogHooks
 
 -- Creates a red button matching Blizzard's Edit Mode style.
 local function CreateRedButton(parent, label, onClick)
@@ -57,7 +59,7 @@ local function CreateEditModePanel()
 
     local db = ns.db
 
-    local f = CreateFrame("Frame", "EnhancedCDMEditModePanel", UIParent)
+    local f = CreateFrame("Frame", nil, UIParent)
     f:EnableMouse(true)
     f:SetFrameStrata("DIALOG")
     local border = CreateFrame("Frame", nil, f, "DialogBorderTranslucentTemplate")
@@ -90,7 +92,7 @@ local function CreateEditModePanel()
     layoutLabel:SetJustifyH("LEFT")
     layoutLabel:SetText("Layout")
 
-    local layoutDropdown = CreateFrame("DropdownButton", "EnhancedCDMLayoutDropdown", row1, "WowStyle1DropdownTemplate")
+    local layoutDropdown = CreateFrame("DropdownButton", nil, row1, "WowStyle1DropdownTemplate")
     layoutDropdown:SetPoint("LEFT", layoutLabel, "RIGHT", 5, 0)
     layoutDropdown:SetWidth(DROPDOWN_WIDTH)
     layoutDropdown:SetDefaultText(ns.LAYOUT_DISPLAY[db.layout])
@@ -120,7 +122,7 @@ local function CreateEditModePanel()
     perRowLabel:SetJustifyH("LEFT")
     perRowLabel:SetText(IsViewerVertical(ns.viewer) and "# Rows" or "# Columns")
 
-    local steppers = CreateFrame("Frame", "EnhancedCDMPerRowStepper", row2, "MinimalSliderWithSteppersTemplate")
+    local steppers = CreateFrame("Frame", nil, row2, "MinimalSliderWithSteppersTemplate")
     steppers:SetPoint("LEFT", perRowLabel, "RIGHT", 5, 0)
     steppers:SetWidth(SLIDER_WIDTH)
     steppers:SetHeight(17)
@@ -145,7 +147,7 @@ local function CreateEditModePanel()
     growLabel:SetJustifyH("LEFT")
     growLabel:SetText("Growth")
 
-    local dropdown = CreateFrame("DropdownButton", "EnhancedCDMGrowDropdown", row3, "WowStyle1DropdownTemplate")
+    local dropdown = CreateFrame("DropdownButton", nil, row3, "WowStyle1DropdownTemplate")
     dropdown:SetPoint("LEFT", growLabel, "RIGHT", 5, 0)
     dropdown:SetWidth(DROPDOWN_WIDTH)
     local growMap = IsViewerVertical(ns.viewer) and ns.DIRECTION_V_DISPLAY or ns.DIRECTION_DISPLAY
@@ -177,7 +179,7 @@ local function CreateEditModePanel()
     alignLabel:SetJustifyH("LEFT")
     alignLabel:SetText("Alignment")
 
-    local alignDropdown = CreateFrame("DropdownButton", "EnhancedCDMAlignDropdown", row4, "WowStyle1DropdownTemplate")
+    local alignDropdown = CreateFrame("DropdownButton", nil, row4, "WowStyle1DropdownTemplate")
     alignDropdown:SetPoint("LEFT", alignLabel, "RIGHT", 5, 0)
     alignDropdown:SetWidth(DROPDOWN_WIDTH)
     local alignMap = IsViewerVertical(ns.viewer) and ns.ALIGN_V_DISPLAY or ns.ALIGN_DISPLAY
@@ -226,8 +228,7 @@ local function CreateEditModePanel()
     bsFontLabel:SetJustifyH("LEFT")
     bsFontLabel:SetText("Font Size")
 
-    local bsFontStepperName = "EnhancedCDMBuffsStackFontStepper"
-    local bsFontSteppers = CreateFrame("Frame", bsFontStepperName, bsRow1, "MinimalSliderWithSteppersTemplate")
+    local bsFontSteppers = CreateFrame("Frame", nil, bsRow1, "MinimalSliderWithSteppersTemplate")
     bsFontSteppers:SetPoint("LEFT", bsFontLabel, "RIGHT", 5, 0)
     bsFontSteppers:SetWidth(SLIDER_WIDTH)
     bsFontSteppers:SetHeight(17)
@@ -239,6 +240,9 @@ local function CreateEditModePanel()
         ns.db[bStacksPrefix .. "fontSize"] = value
         if ns.RefreshAllStacks then ns.RefreshAllStacks() end
     end, bsFontSteppers)
+
+    local bsOffsetXSteppers
+    local bsOffsetYSteppers
 
     -- Row S2: Position
     local bsRow2 = CreateFrame("Frame", nil, f)
@@ -252,7 +256,7 @@ local function CreateEditModePanel()
     bsPosLabel:SetJustifyH("LEFT")
     bsPosLabel:SetText("Position")
 
-    local bsPosDropdown = CreateFrame("DropdownButton", "EnhancedCDMBuffsStackPosDropdown", bsRow2, "WowStyle1DropdownTemplate")
+    local bsPosDropdown = CreateFrame("DropdownButton", nil, bsRow2, "WowStyle1DropdownTemplate")
     bsPosDropdown:SetPoint("LEFT", bsPosLabel, "RIGHT", 5, 0)
     bsPosDropdown:SetWidth(DROPDOWN_WIDTH)
     bsPosDropdown:SetDefaultText(ns.HOTKEY_POSITION_DISPLAY[db[bStacksPrefix .. "position"]])
@@ -271,10 +275,12 @@ local function CreateEditModePanel()
                     end
                     if ns.RefreshAllStacks then ns.RefreshAllStacks() end
                     -- Sync slider widgets
-                    local soxS = _G["EnhancedCDMBuffsStackOffsetXStepper"]
-                    if soxS and soxS.Slider then soxS.Slider:SetValue(ns.db[bStacksPrefix .. "offsetX"]) end
-                    local soyS = _G["EnhancedCDMBuffsStackOffsetYStepper"]
-                    if soyS and soyS.Slider then soyS.Slider:SetValue(ns.db[bStacksPrefix .. "offsetY"]) end
+                    if bsOffsetXSteppers and bsOffsetXSteppers.Slider then
+                        bsOffsetXSteppers.Slider:SetValue(ns.db[bStacksPrefix .. "offsetX"])
+                    end
+                    if bsOffsetYSteppers and bsOffsetYSteppers.Slider then
+                        bsOffsetYSteppers.Slider:SetValue(ns.db[bStacksPrefix .. "offsetY"])
+                    end
                 end,
                 pos
             )
@@ -293,8 +299,7 @@ local function CreateEditModePanel()
     bsOffsetXLabel:SetJustifyH("LEFT")
     bsOffsetXLabel:SetText("Horizontal")
 
-    local bsOffsetXStepperName = "EnhancedCDMBuffsStackOffsetXStepper"
-    local bsOffsetXSteppers = CreateFrame("Frame", bsOffsetXStepperName, bsRow3, "MinimalSliderWithSteppersTemplate")
+    bsOffsetXSteppers = CreateFrame("Frame", nil, bsRow3, "MinimalSliderWithSteppersTemplate")
     bsOffsetXSteppers:SetPoint("LEFT", bsOffsetXLabel, "RIGHT", 5, 0)
     bsOffsetXSteppers:SetWidth(SLIDER_WIDTH)
     bsOffsetXSteppers:SetHeight(17)
@@ -319,8 +324,7 @@ local function CreateEditModePanel()
     bsOffsetYLabel:SetJustifyH("LEFT")
     bsOffsetYLabel:SetText("Vertical")
 
-    local bsOffsetYStepperName = "EnhancedCDMBuffsStackOffsetYStepper"
-    local bsOffsetYSteppers = CreateFrame("Frame", bsOffsetYStepperName, bsRow4, "MinimalSliderWithSteppersTemplate")
+    bsOffsetYSteppers = CreateFrame("Frame", nil, bsRow4, "MinimalSliderWithSteppersTemplate")
     bsOffsetYSteppers:SetPoint("LEFT", bsOffsetYLabel, "RIGHT", 5, 0)
     bsOffsetYSteppers:SetWidth(SLIDER_WIDTH)
     bsOffsetYSteppers:SetHeight(17)
@@ -357,6 +361,10 @@ local function CreateEditModePanel()
     f.layoutDropdown = layoutDropdown
     f.bsPosDropdown = bsPosDropdown
     f.perRowLabel = perRowLabel
+    f.perRowSteppers = steppers
+    f.bsFontSteppers = bsFontSteppers
+    f.bsOffsetXSteppers = bsOffsetXSteppers
+    f.bsOffsetYSteppers = bsOffsetYSteppers
     editModePanel = f
 
     local stacksExtraHeight = DIVIDER_GAP + bStackTitle:GetStringHeight() + 6 + (ROW_HEIGHT * 4)
@@ -379,7 +387,7 @@ RefreshEditModePanel = function()
     if not editModePanel then return end
     local db = ns.db
     local isVert = IsViewerVertical(ns.viewer)
-    local steppers = _G["EnhancedCDMPerRowStepper"]
+    local steppers = editModePanel.perRowSteppers
     if steppers and steppers.Slider then
         steppers.Slider:SetValue(db.maxPerRow)
     end
@@ -392,11 +400,11 @@ RefreshEditModePanel = function()
     SetDropdownText(editModePanel.alignDropdown, alignMap[db.align])
     SetDropdownText(editModePanel.layoutDropdown, ns.LAYOUT_DISPLAY[db.layout])
     SetDropdownText(editModePanel.bsPosDropdown, ns.HOTKEY_POSITION_DISPLAY[db.buffs_stacks_position])
-    local bsfS = _G["EnhancedCDMBuffsStackFontStepper"]
+    local bsfS = editModePanel.bsFontSteppers
     if bsfS and bsfS.Slider then bsfS.Slider:SetValue(db.buffs_stacks_fontSize) end
-    local bsoxS = _G["EnhancedCDMBuffsStackOffsetXStepper"]
+    local bsoxS = editModePanel.bsOffsetXSteppers
     if bsoxS and bsoxS.Slider then bsoxS.Slider:SetValue(db.buffs_stacks_offsetX) end
-    local bsoyS = _G["EnhancedCDMBuffsStackOffsetYStepper"]
+    local bsoyS = editModePanel.bsOffsetYSteppers
     if bsoyS and bsoyS.Slider then bsoyS.Slider:SetValue(db.buffs_stacks_offsetY) end
 end
 ns.RefreshEditModePanel = function()
@@ -417,6 +425,8 @@ end
 -- Both panels become borderless; a shared wrapper provides the unified border.
 -- Falls back to standalone positioning if the dialog is unavailable.
 local function EmbedPanelInDialog(panel)
+    if InstallDialogHooks then InstallDialogHooks() end
+
     local dialog = _G["EditModeSystemSettingsDialog"]
     if not dialog or not dialog:IsShown() then
         -- Fallback: show standalone
@@ -438,7 +448,7 @@ local function EmbedPanelInDialog(panel)
 
     -- Create or reuse the wrapper frame that provides the shared border
     if not wrapperFrame then
-        wrapperFrame = CreateFrame("Frame", "EnhancedCDMWrapperFrame", UIParent)
+        wrapperFrame = CreateFrame("Frame", nil, UIParent)
         wrapperFrame:EnableMouse(false)
         wrapperFrame:SetFrameStrata("DIALOG")
         local wrapBorder = CreateFrame("Frame", nil, wrapperFrame, "DialogBorderTranslucentTemplate")
@@ -525,7 +535,7 @@ local function CreateBarsEditModePanel()
 
     local db = ns.db
 
-    local f = CreateFrame("Frame", "EnhancedCDMBarsEditModePanel", UIParent)
+    local f = CreateFrame("Frame", nil, UIParent)
     f:EnableMouse(true)
     f:SetFrameStrata("DIALOG")
     local border = CreateFrame("Frame", nil, f, "DialogBorderTranslucentTemplate")
@@ -559,7 +569,7 @@ local function CreateBarsEditModePanel()
     orientLabel:SetJustifyH("LEFT")
     orientLabel:SetText("Orientation")
 
-    local orientDropdown = CreateFrame("DropdownButton", "EnhancedCDMBarsOrientDropdown", row1, "WowStyle1DropdownTemplate")
+    local orientDropdown = CreateFrame("DropdownButton", nil, row1, "WowStyle1DropdownTemplate")
     orientDropdown:SetPoint("LEFT", orientLabel, "RIGHT", 5, 0)
     orientDropdown:SetWidth(DROPDOWN_WIDTH)
     orientDropdown:SetDefaultText(ns.ORIENTATION_DISPLAY[db.bars_orientation])
@@ -576,7 +586,7 @@ local function CreateBarsEditModePanel()
     layoutLabel:SetJustifyH("LEFT")
     layoutLabel:SetText("Layout")
 
-    local layoutDropdown = CreateFrame("DropdownButton", "EnhancedCDMBarsLayoutDropdown", row2, "WowStyle1DropdownTemplate")
+    local layoutDropdown = CreateFrame("DropdownButton", nil, row2, "WowStyle1DropdownTemplate")
     layoutDropdown:SetPoint("LEFT", layoutLabel, "RIGHT", 5, 0)
     layoutDropdown:SetWidth(DROPDOWN_WIDTH)
     layoutDropdown:SetDefaultText(ns.LAYOUT_DISPLAY[db.bars_layout])
@@ -591,7 +601,7 @@ local function CreateBarsEditModePanel()
     alignLabel:SetJustifyH("LEFT")
     alignLabel:SetText("Alignment")
 
-    local alignDropdown = CreateFrame("DropdownButton", "EnhancedCDMBarsAlignDropdown", row3, "WowStyle1DropdownTemplate")
+    local alignDropdown = CreateFrame("DropdownButton", nil, row3, "WowStyle1DropdownTemplate")
     alignDropdown:SetPoint("LEFT", alignLabel, "RIGHT", 5, 0)
     alignDropdown:SetWidth(DROPDOWN_WIDTH)
 
@@ -605,7 +615,7 @@ local function CreateBarsEditModePanel()
     perRowLabel:SetJustifyH("LEFT")
     perRowLabel:SetText("Per Row")
 
-    local steppers = CreateFrame("Frame", "EnhancedCDMBarsPerRowStepper", row4, "MinimalSliderWithSteppersTemplate")
+    local steppers = CreateFrame("Frame", nil, row4, "MinimalSliderWithSteppersTemplate")
     steppers:SetPoint("LEFT", perRowLabel, "RIGHT", 5, 0)
     steppers:SetWidth(SLIDER_WIDTH)
     steppers:SetHeight(17)
@@ -705,7 +715,7 @@ local function CreateBarsEditModePanel()
         SetDropdownText(alignDropdown, alignText)
 
         -- Update slider
-        local barsSteppers = _G["EnhancedCDMBarsPerRowStepper"]
+        local barsSteppers = steppers
         if barsSteppers and barsSteppers.Slider then
             barsSteppers.Slider:SetValue(ns.db.bars_maxPerRow)
         end
@@ -789,10 +799,10 @@ end
 -- Hotkeys panel factory — creates a checkbox + position + font size panel
 -- ---------------------------------------------------------------------------
 
-local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKey, applyAlignFn, getViewer)
+local function CreateHotkeysPanelForViewer(titleText, prefix, alignKey, applyAlignFn, getViewer)
     local db = ns.db
 
-    local f = CreateFrame("Frame", frameName, UIParent)
+    local f = CreateFrame("Frame", nil, UIParent)
     f:EnableMouse(true)
     f:SetFrameStrata("DIALOG")
     local border = CreateFrame("Frame", nil, f, "DialogBorderTranslucentTemplate")
@@ -884,7 +894,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     alignLabel:SetJustifyH("LEFT")
     alignLabel:SetText("Alignment")
 
-    local alignDropdown = CreateFrame("DropdownButton", frameName .. "AlignDropdown", row0, "WowStyle1DropdownTemplate")
+    local alignDropdown = CreateFrame("DropdownButton", nil, row0, "WowStyle1DropdownTemplate")
     alignDropdown:SetPoint("LEFT", alignLabel, "RIGHT", 5, 0)
     alignDropdown:SetWidth(DROPDOWN_WIDTH)
     local initAlignMap = (getViewer and IsViewerVertical(getViewer())) and ns.ALIGN_V_DISPLAY or ns.ALIGN_DISPLAY
@@ -911,7 +921,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     feedbackRow:SetPoint("TOPLEFT", row0, "BOTTOMLEFT", 0, 0)
     feedbackRow:SetPoint("TOPRIGHT", row0, "BOTTOMRIGHT", 0, 0)
 
-    local feedbackCheckbox = CreateFrame("CheckButton", frameName .. "FeedbackCheckbox", feedbackRow, "UICheckButtonTemplate")
+    local feedbackCheckbox = CreateFrame("CheckButton", nil, feedbackRow, "UICheckButtonTemplate")
     feedbackCheckbox:SetPoint("LEFT", 0, 0)
     feedbackCheckbox:SetSize(30, 30)
 
@@ -939,7 +949,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     local row1 = CreateFrame("Frame", nil, scrollChild)
     row1:SetHeight(ROW_HEIGHT)
 
-    local checkbox = CreateFrame("CheckButton", frameName .. "Checkbox", row1, "UICheckButtonTemplate")
+    local checkbox = CreateFrame("CheckButton", nil, row1, "UICheckButtonTemplate")
     checkbox:SetPoint("LEFT", 0, 0)
     checkbox:SetSize(30, 30)
 
@@ -952,7 +962,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     local row2 = CreateFrame("Frame", nil, scrollChild)
     row2:SetHeight(ROW_HEIGHT)
 
-    local shortenCheckbox = CreateFrame("CheckButton", frameName .. "ShortenCheckbox", row2, "UICheckButtonTemplate")
+    local shortenCheckbox = CreateFrame("CheckButton", nil, row2, "UICheckButtonTemplate")
     shortenCheckbox:SetPoint("LEFT", 0, 0)
     shortenCheckbox:SetSize(30, 30)
 
@@ -971,8 +981,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     fontLabel:SetJustifyH("LEFT")
     fontLabel:SetText("Font Size")
 
-    local stepperName = frameName .. "FontStepper"
-    local fontSteppers = CreateFrame("Frame", stepperName, row3, "MinimalSliderWithSteppersTemplate")
+    local fontSteppers = CreateFrame("Frame", nil, row3, "MinimalSliderWithSteppersTemplate")
     fontSteppers:SetPoint("LEFT", fontLabel, "RIGHT", 5, 0)
     fontSteppers:SetWidth(SLIDER_WIDTH)
     fontSteppers:SetHeight(17)
@@ -995,7 +1004,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     posLabel:SetJustifyH("LEFT")
     posLabel:SetText("Position")
 
-    local posDropdown = CreateFrame("DropdownButton", frameName .. "PosDropdown", row4, "WowStyle1DropdownTemplate")
+    local posDropdown = CreateFrame("DropdownButton", nil, row4, "WowStyle1DropdownTemplate")
     posDropdown:SetPoint("LEFT", posLabel, "RIGHT", 5, 0)
     posDropdown:SetWidth(DROPDOWN_WIDTH)
 
@@ -1033,8 +1042,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     offsetXLabel:SetJustifyH("LEFT")
     offsetXLabel:SetText("Horizontal")
 
-    local offsetXStepperName = frameName .. "OffsetXStepper"
-    local offsetXSteppers = CreateFrame("Frame", offsetXStepperName, row5, "MinimalSliderWithSteppersTemplate")
+    local offsetXSteppers = CreateFrame("Frame", nil, row5, "MinimalSliderWithSteppersTemplate")
     offsetXSteppers:SetPoint("LEFT", offsetXLabel, "RIGHT", 5, 0)
     offsetXSteppers:SetWidth(SLIDER_WIDTH)
     offsetXSteppers:SetHeight(17)
@@ -1057,8 +1065,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     offsetYLabel:SetJustifyH("LEFT")
     offsetYLabel:SetText("Vertical")
 
-    local offsetYStepperName = frameName .. "OffsetYStepper"
-    local offsetYSteppers = CreateFrame("Frame", offsetYStepperName, row6, "MinimalSliderWithSteppersTemplate")
+    local offsetYSteppers = CreateFrame("Frame", nil, row6, "MinimalSliderWithSteppersTemplate")
     offsetYSteppers:SetPoint("LEFT", offsetYLabel, "RIGHT", 5, 0)
     offsetYSteppers:SetWidth(SLIDER_WIDTH)
     offsetYSteppers:SetHeight(17)
@@ -1094,8 +1101,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     sFontLabel:SetJustifyH("LEFT")
     sFontLabel:SetText("Font Size")
 
-    local sFontStepperName = frameName .. "StackFontStepper"
-    local sFontSteppers = CreateFrame("Frame", sFontStepperName, sRow1, "MinimalSliderWithSteppersTemplate")
+    local sFontSteppers = CreateFrame("Frame", nil, sRow1, "MinimalSliderWithSteppersTemplate")
     sFontSteppers:SetPoint("LEFT", sFontLabel, "RIGHT", 5, 0)
     sFontSteppers:SetWidth(SLIDER_WIDTH)
     sFontSteppers:SetHeight(17)
@@ -1118,7 +1124,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     sPosLabel:SetJustifyH("LEFT")
     sPosLabel:SetText("Position")
 
-    local sPosDropdown = CreateFrame("DropdownButton", frameName .. "StackPosDropdown", sRow2, "WowStyle1DropdownTemplate")
+    local sPosDropdown = CreateFrame("DropdownButton", nil, sRow2, "WowStyle1DropdownTemplate")
     sPosDropdown:SetPoint("LEFT", sPosLabel, "RIGHT", 5, 0)
     sPosDropdown:SetWidth(DROPDOWN_WIDTH)
 
@@ -1154,8 +1160,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     sOffsetXLabel:SetJustifyH("LEFT")
     sOffsetXLabel:SetText("Horizontal")
 
-    local sOffsetXStepperName = frameName .. "StackOffsetXStepper"
-    local sOffsetXSteppers = CreateFrame("Frame", sOffsetXStepperName, sRow3, "MinimalSliderWithSteppersTemplate")
+    local sOffsetXSteppers = CreateFrame("Frame", nil, sRow3, "MinimalSliderWithSteppersTemplate")
     sOffsetXSteppers:SetPoint("LEFT", sOffsetXLabel, "RIGHT", 5, 0)
     sOffsetXSteppers:SetWidth(SLIDER_WIDTH)
     sOffsetXSteppers:SetHeight(17)
@@ -1178,8 +1183,7 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     sOffsetYLabel:SetJustifyH("LEFT")
     sOffsetYLabel:SetText("Vertical")
 
-    local sOffsetYStepperName = frameName .. "StackOffsetYStepper"
-    local sOffsetYSteppers = CreateFrame("Frame", sOffsetYStepperName, sRow4, "MinimalSliderWithSteppersTemplate")
+    local sOffsetYSteppers = CreateFrame("Frame", nil, sRow4, "MinimalSliderWithSteppersTemplate")
     sOffsetYSteppers:SetPoint("LEFT", sOffsetYLabel, "RIGHT", 5, 0)
     sOffsetYSteppers:SetWidth(SLIDER_WIDTH)
     sOffsetYSteppers:SetHeight(17)
@@ -1193,21 +1197,18 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
     end, sOffsetYSteppers)
 
     UpdateStacksWidgets = function()
-        local sfSteppers = _G[sFontStepperName]
-        if sfSteppers and sfSteppers.Slider then
-            sfSteppers.Slider:SetValue(ns.db[stacksPrefix .. "fontSize"])
+        if sFontSteppers and sFontSteppers.Slider then
+            sFontSteppers.Slider:SetValue(ns.db[stacksPrefix .. "fontSize"])
         end
 
         SetDropdownText(sPosDropdown, ns.HOTKEY_POSITION_DISPLAY[ns.db[stacksPrefix .. "position"]])
 
-        local soxSteppers = _G[sOffsetXStepperName]
-        if soxSteppers and soxSteppers.Slider then
-            soxSteppers.Slider:SetValue(ns.db[stacksPrefix .. "offsetX"])
+        if sOffsetXSteppers and sOffsetXSteppers.Slider then
+            sOffsetXSteppers.Slider:SetValue(ns.db[stacksPrefix .. "offsetX"])
         end
 
-        local soySteppers = _G[sOffsetYStepperName]
-        if soySteppers and soySteppers.Slider then
-            soySteppers.Slider:SetValue(ns.db[stacksPrefix .. "offsetY"])
+        if sOffsetYSteppers and sOffsetYSteppers.Slider then
+            sOffsetYSteppers.Slider:SetValue(ns.db[stacksPrefix .. "offsetY"])
         end
     end
 
@@ -1233,21 +1234,18 @@ local function CreateHotkeysPanelForViewer(frameName, titleText, prefix, alignKe
         feedbackCheckbox:SetChecked(ns.db[feedbackKey])
         shortenCheckbox:SetChecked(ns.db[prefix .. "shorten"])
 
-        local fSteppers = _G[stepperName]
-        if fSteppers and fSteppers.Slider then
-            fSteppers.Slider:SetValue(ns.db[prefix .. "fontSize"])
+        if fontSteppers and fontSteppers.Slider then
+            fontSteppers.Slider:SetValue(ns.db[prefix .. "fontSize"])
         end
 
         SetDropdownText(posDropdown, ns.HOTKEY_POSITION_DISPLAY[ns.db[prefix .. "position"]])
 
-        local oxSteppers = _G[offsetXStepperName]
-        if oxSteppers and oxSteppers.Slider then
-            oxSteppers.Slider:SetValue(ns.db[prefix .. "offsetX"])
+        if offsetXSteppers and offsetXSteppers.Slider then
+            offsetXSteppers.Slider:SetValue(ns.db[prefix .. "offsetX"])
         end
 
-        local oySteppers = _G[offsetYStepperName]
-        if oySteppers and oySteppers.Slider then
-            oySteppers.Slider:SetValue(ns.db[prefix .. "offsetY"])
+        if offsetYSteppers and offsetYSteppers.Slider then
+            offsetYSteppers.Slider:SetValue(ns.db[prefix .. "offsetY"])
         end
 
         UpdateStacksWidgets()
@@ -1388,7 +1386,7 @@ end
 local function ShowEssentialHotkeysPanel()
     if not essentialHotkeysPanel then
         essentialHotkeysPanel = CreateHotkeysPanelForViewer(
-            "EnhancedCDMEssentialHotkeysPanel", "Enhanced CDM - Essential", "essential_hotkeys_",
+            "Enhanced CDM - Essential", "essential_hotkeys_",
             "essential_align", ns.ApplyEssentialLayout, function() return ns.essentialViewer end)
     end
     essentialHotkeysPanel.UpdatePanel()
@@ -1405,7 +1403,7 @@ end
 local function ShowUtilityHotkeysPanel()
     if not utilityHotkeysPanel then
         utilityHotkeysPanel = CreateHotkeysPanelForViewer(
-            "EnhancedCDMUtilityHotkeysPanel", "Enhanced CDM - Utility", "utility_hotkeys_",
+            "Enhanced CDM - Utility", "utility_hotkeys_",
             "utility_align", ns.ApplyUtilityLayout, function() return ns.utilityViewer end)
     end
     utilityHotkeysPanel.UpdatePanel()
@@ -1431,13 +1429,69 @@ local function HideAllPanels()
     HideUtilityHotkeysPanel()
 end
 
+InstallDialogHooks = function()
+    local dialog = _G["EditModeSystemSettingsDialog"]
+    if not dialog or hookedDialog == dialog then return end
+
+    local ok = pcall(function()
+        if dialog.UpdateSettings then
+            hooksecurefunc(dialog, "UpdateSettings", function(self)
+                local buffViewer = _G["BuffIconCooldownViewer"]
+                local buffBarViewer = _G["BuffBarCooldownViewer"]
+                local essViewer = _G["EssentialCooldownViewer"]
+                local utilViewer = _G["UtilityCooldownViewer"]
+                if self.attachedToSystem == buffViewer or self.attachedToSystem == buffBarViewer
+                    or self.attachedToSystem == essViewer or self.attachedToSystem == utilViewer then
+                    -- Hide IconDirection - our alignment overrides Blizzard's direction
+                    local children = { self.Settings:GetChildren() }
+                    for _, child in ipairs(children) do
+                        if child.setting == Enum.EditModeCooldownViewerSetting.IconDirection then
+                            child:Hide()
+                        end
+                    end
+                    self.Settings:Layout()
+                end
+
+                -- Refresh our panel labels when Blizzard settings change (e.g. Orientation)
+                if self.attachedToSystem == buffViewer then
+                    RefreshEditModePanel()
+                elseif self.attachedToSystem == essViewer then
+                    if essentialHotkeysPanel and essentialHotkeysPanel.UpdatePanel then
+                        essentialHotkeysPanel.UpdatePanel()
+                    end
+                elseif self.attachedToSystem == utilViewer then
+                    if utilityHotkeysPanel and utilityHotkeysPanel.UpdatePanel then
+                        utilityHotkeysPanel.UpdatePanel()
+                    end
+                end
+            end)
+        end
+
+        dialog:HookScript("OnHide", function()
+            UnembedPanel()
+        end)
+    end)
+
+    if ok then
+        hookedDialog = dialog
+    else
+        hookedDialog = nil
+        print("|cffff6600Enhanced CDM:|r Edit Mode dialog integration unavailable. Use /ecdm to configure.")
+    end
+end
+
 local function SetupEditMode()
     if not EditModeManagerFrame then return end
-    if editModeHooked then return end
+    if editModeHooked then
+        if InstallDialogHooks then InstallDialogHooks() end
+        return
+    end
     editModeHooked = true
 
     local ok = pcall(function()
         hooksecurefunc(EditModeManagerFrame, "SelectSystem", function(self, systemFrame)
+            if InstallDialogHooks then InstallDialogHooks() end
+
             local buffViewer = _G["BuffIconCooldownViewer"]
             local buffBarViewer = _G["BuffBarCooldownViewer"]
             local essViewer = _G["EssentialCooldownViewer"]
@@ -1473,47 +1527,8 @@ local function SetupEditMode()
             if ns.ScheduleUtilityLayout then ns.ScheduleUtilityLayout() end
         end)
 
-        -- Hide the "Icon Direction" setting when a CDM viewer is selected
-        local dialog = _G["EditModeSystemSettingsDialog"]
-        if dialog then
-            if dialog.UpdateSettings then
-                hooksecurefunc(dialog, "UpdateSettings", function(self)
-                    local buffViewer = _G["BuffIconCooldownViewer"]
-                    local buffBarViewer = _G["BuffBarCooldownViewer"]
-                    local essViewer = _G["EssentialCooldownViewer"]
-                    local utilViewer = _G["UtilityCooldownViewer"]
-                    if self.attachedToSystem == buffViewer or self.attachedToSystem == buffBarViewer
-                        or self.attachedToSystem == essViewer or self.attachedToSystem == utilViewer then
-                        -- Hide IconDirection — our alignment overrides Blizzard's direction
-                        local children = { self.Settings:GetChildren() }
-                        for _, child in ipairs(children) do
-                            if child.setting == Enum.EditModeCooldownViewerSetting.IconDirection then
-                                child:Hide()
-                            end
-                        end
-                        self.Settings:Layout()
-                    end
-
-                    -- Refresh our panel labels when Blizzard settings change (e.g. Orientation)
-                    if self.attachedToSystem == buffViewer then
-                        RefreshEditModePanel()
-                    elseif self.attachedToSystem == essViewer then
-                        if essentialHotkeysPanel and essentialHotkeysPanel.UpdatePanel then
-                            essentialHotkeysPanel.UpdatePanel()
-                        end
-                    elseif self.attachedToSystem == utilViewer then
-                        if utilityHotkeysPanel and utilityHotkeysPanel.UpdatePanel then
-                            utilityHotkeysPanel.UpdatePanel()
-                        end
-                    end
-                end)
-            end
-
-            -- Clean up embed state when dialog hides (e.g. close button)
-            dialog:HookScript("OnHide", function()
-                UnembedPanel()
-            end)
-        end
+        -- Install dialog hooks if the settings dialog already exists.
+        if InstallDialogHooks then InstallDialogHooks() end
     end)
 
     if not ok then
@@ -1533,12 +1548,7 @@ local function ApplySettingsBarPreview(entry)
     if not entry or not entry.cooldownID then return end
     local db = ns.db
     if not db then return end
-    local colors = db.bars_colors and db.bars_colors[entry.cooldownID]
-    if colors then
-        if ns.ApplyBarGradient then ns.ApplyBarGradient(entry) end
-    else
-        if ns.ResetBarGradient then ns.ResetBarGradient(entry) end
-    end
+    if ns.RefreshBarGradient then ns.RefreshBarGradient(entry) end
 end
 
 local function OpenBarColorPicker(id, colorKey, label, settingsEntry)

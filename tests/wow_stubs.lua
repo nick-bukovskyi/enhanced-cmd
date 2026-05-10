@@ -8,11 +8,22 @@ function wipe(t)
 end
 
 -- WoW global: hooksecurefunc — we just store the hook, no original to call
+_G._hookedMethods = {}
 function hooksecurefunc(tblOrName, nameOrFunc, funcOrNil)
     -- Two forms:
     --   hooksecurefunc(obj, "Method", hook)
     --   hooksecurefunc("GlobalFunc", hook)
-    -- For testing we do nothing — hooks are Blizzard-specific
+    if type(tblOrName) == "table" and type(nameOrFunc) == "string" and type(funcOrNil) == "function" then
+        tblOrName._secureHooks = tblOrName._secureHooks or {}
+        tblOrName._secureHooks[nameOrFunc] = tblOrName._secureHooks[nameOrFunc] or {}
+        table.insert(tblOrName._secureHooks[nameOrFunc], funcOrNil)
+        table.insert(_G._hookedMethods, { target = tblOrName, method = nameOrFunc, func = funcOrNil })
+    elseif type(tblOrName) == "string" and type(nameOrFunc) == "function" then
+        _G._secureGlobalHooks = _G._secureGlobalHooks or {}
+        _G._secureGlobalHooks[tblOrName] = _G._secureGlobalHooks[tblOrName] or {}
+        table.insert(_G._secureGlobalHooks[tblOrName], nameOrFunc)
+    end
+    -- The original function is not invoked in tests; specs call recorded hooks directly.
 end
 
 -- Minimal frame mock
@@ -35,9 +46,16 @@ function FrameMixin:SetAllPoints() end
 function FrameMixin:Show() self._shown = true end
 function FrameMixin:Hide() self._shown = false end
 function FrameMixin:IsShown() return self._shown ~= false end
+function FrameMixin:IsVisible() return self:IsShown() end
 function FrameMixin:EnableMouse() end
 function FrameMixin:SetFrameStrata() end
 function FrameMixin:SetFrameLevel(level) self._frameLevel = level end
+function FrameMixin:SetParent(parent)
+    self._parent = parent
+    if parent and parent._children then
+        table.insert(parent._children, self)
+    end
+end
 function FrameMixin:SetWidth(w) self._width = w end
 function FrameMixin:SetHeight(h) self._height = h end
 function FrameMixin:RegisterEvent() end
@@ -48,7 +66,47 @@ end
 function FrameMixin:GetScript(event)
     return self._scripts and self._scripts[event]
 end
-function FrameMixin:HookScript() end
+function FrameMixin:HookScript(event, handler)
+    self._hookScripts = self._hookScripts or {}
+    self._hookScripts[event] = self._hookScripts[event] or {}
+    table.insert(self._hookScripts[event], handler)
+end
+function FrameMixin:Layout() self._layoutCalled = true end
+function FrameMixin:SetText(text) self._text = text end
+function FrameMixin:GetText() return self._text end
+function FrameMixin:SetNormalFontObject() end
+function FrameMixin:SetHighlightFontObject() end
+function FrameMixin:GetNormalTexture()
+    self._normalTexture = self._normalTexture or { SetVertexColor = function() end }
+    return self._normalTexture
+end
+function FrameMixin:GetPushedTexture()
+    self._pushedTexture = self._pushedTexture or { SetVertexColor = function() end }
+    return self._pushedTexture
+end
+function FrameMixin:SetDefaultText(text)
+    self._defaultText = text
+    self.Text = self.Text or { SetText = function(obj, val) obj._text = val end }
+    self.Text:SetText(text)
+end
+function FrameMixin:SetupMenu(generator) self._menuGenerator = generator end
+function FrameMixin:Init(value, minValue, maxValue, steps, fmt)
+    self._init = { value = value, minValue = minValue, maxValue = maxValue, steps = steps, fmt = fmt }
+    if self.Slider and self.Slider.SetValue then self.Slider:SetValue(value) end
+end
+function FrameMixin:RegisterCallback(event, callback, owner)
+    self._callbacks = self._callbacks or {}
+    self._callbacks[event] = { callback = callback, owner = owner }
+end
+function FrameMixin:SetChecked(value) self._checked = value end
+function FrameMixin:GetChecked() return self._checked and 1 or nil end
+function FrameMixin:EnableMouseWheel() end
+function FrameMixin:SetScrollChild(child) self._scrollChild = child end
+function FrameMixin:GetVerticalScroll() return self._verticalScroll or 0 end
+function FrameMixin:SetVerticalScroll(value) self._verticalScroll = value end
+function FrameMixin:SetBackdrop() end
+function FrameMixin:SetBackdropColor() end
+function FrameMixin:SetBackdropBorderColor() end
 function FrameMixin:CreateFontString()
     return setmetatable({
         SetPoint = function() end,
@@ -56,6 +114,8 @@ function FrameMixin:CreateFontString()
         SetTextColor = function() end,
         SetFont = function() end,
         SetJustifyH = function() end,
+        SetWidth = function() end,
+        SetHeight = function() end,
         ClearAllPoints = function() end,
         Show = function() end,
         Hide = function() end,
@@ -66,9 +126,13 @@ function FrameMixin:CreateTexture(name, layer)
     return {
         SetTexture = function() end,
         SetAtlas = function() end,
-        SetSize = function() end,
-        SetPoint = function() end,
+        SetSize = function(self, w, h) self._width = w; self._height = h end,
+        SetPoint = function(self, ...) self._point = { ... } end,
         SetAllPoints = function() end,
+        SetColorTexture = function() end,
+        SetWidth = function() end,
+        SetHeight = function() end,
+        ClearAllPoints = function() end,
         Show = function() end,
         Hide = function() end,
         GetTexture = function() return nil end,
@@ -94,10 +158,11 @@ function CreateFrame(frameType, name, parent, template)
         _height = 0,
         _scale = 1,
         Slider = {
+            _value = nil,
             SetMinMaxValues = function() end,
             SetValueStep = function() end,
             SetObeyStepOnDrag = function() end,
-            SetValue = function() end,
+            SetValue = function(self, value) self._value = value end,
             SetScript = function() end,
         },
     }, FrameMixin)
@@ -169,6 +234,11 @@ function EventRegistry:RegisterCallback(...) end
 Enum = Enum or {}
 Enum.EditModeCooldownViewerSetting = Enum.EditModeCooldownViewerSetting or {}
 Enum.EditModeCooldownViewerSetting.IconDirection = 1
+
+MinimalSliderWithSteppersMixin = MinimalSliderWithSteppersMixin or { Label = { Right = "Right" } }
+function CreateMinimalSliderFormatter(label)
+    return function(value) return tostring(value) end
+end
 
 -- Slash command globals
 SlashCmdList = SlashCmdList or {}

@@ -20,7 +20,7 @@ describe("ApplyBarGradient", function()
     it("applies gradient from db.bars_colors", function()
         local barFrame, _, tex = makeMockBarFrame(42)
         ns.db.bars_colors = {[42] = {sR=1, sG=0, sB=0, eR=0, eG=1, eB=0}}
-        ns.ApplyBarGradient(barFrame)
+        ns._ApplyBarGradient(barFrame)
         expect(#tex._gradientCalls).to_equal(1)
         local call = tex._gradientCalls[1]
         expect(call.startColor.r).to_equal(1)
@@ -35,7 +35,7 @@ describe("ApplyBarGradient", function()
     it("does nothing when cooldownID has no color", function()
         local barFrame, _, tex = makeMockBarFrame(99)
         ns.db.bars_colors = {}
-        ns.ApplyBarGradient(barFrame)
+        ns._ApplyBarGradient(barFrame)
         expect(#tex._gradientCalls).to_equal(0)
     end)
 
@@ -44,7 +44,7 @@ describe("ApplyBarGradient", function()
         barFrame.cooldownID = 50
         ns.db.bars_colors = {[50] = {sR=1, sG=0, sB=0, eR=0, eG=1, eB=0}}
         -- Should not error
-        ns.ApplyBarGradient(barFrame)
+        ns._ApplyBarGradient(barFrame)
         ns.db.bars_colors = {}
     end)
 
@@ -55,7 +55,7 @@ describe("ApplyBarGradient", function()
         barFrame.cooldownID = 55
         ns.db.bars_colors = {[55] = {sR=1, sG=0, sB=0, eR=0, eG=1, eB=0}}
         -- Should not error
-        ns.ApplyBarGradient(barFrame)
+        ns._ApplyBarGradient(barFrame)
         ns.db.bars_colors = {}
     end)
 end)
@@ -63,7 +63,7 @@ end)
 describe("ResetBarGradient", function()
     it("resets to default orange", function()
         local barFrame, _, tex = makeMockBarFrame(42)
-        ns.ResetBarGradient(barFrame)
+        ns._ResetBarGradient(barFrame)
         expect(#tex._gradientCalls).to_equal(1)
         local call = tex._gradientCalls[1]
         expect(call.startColor.r).to_equal(1)
@@ -77,6 +77,67 @@ describe("ResetBarGradient", function()
     it("does nothing when no StatusBar child", function()
         local barFrame = CreateFrame("Frame")
         -- Should not error
-        ns.ResetBarGradient(barFrame)
+        ns._ResetBarGradient(barFrame)
+    end)
+end)
+
+describe("RefreshBarGradient", function()
+    it("resets to default orange when cooldownID has no configured color", function()
+        local barFrame, _, tex = makeMockBarFrame(99)
+        ns.db.bars_colors = {}
+
+        ns.RefreshBarGradient(barFrame)
+
+        expect(#tex._gradientCalls).to_equal(1)
+        local call = tex._gradientCalls[1]
+        expect(call.startColor.r).to_equal(1)
+        expect(call.startColor.g).to_equal(0.5)
+        expect(call.startColor.b).to_equal(0.25)
+        expect(call.endColor.r).to_equal(1)
+        expect(call.endColor.g).to_equal(0.5)
+        expect(call.endColor.b).to_equal(0.25)
+    end)
+
+    it("uses configured gradient when present", function()
+        local barFrame, _, tex = makeMockBarFrame(42)
+        ns.db.bars_colors = {[42] = {sR=0.1, sG=0.2, sB=0.3, eR=0.4, eG=0.5, eB=0.6}}
+
+        ns.RefreshBarGradient(barFrame)
+
+        expect(#tex._gradientCalls).to_equal(1)
+        local call = tex._gradientCalls[1]
+        expect(call.startColor.r).to_equal(0.1)
+        expect(call.startColor.g).to_equal(0.2)
+        expect(call.startColor.b).to_equal(0.3)
+        expect(call.endColor.r).to_equal(0.4)
+        expect(call.endColor.g).to_equal(0.5)
+        expect(call.endColor.b).to_equal(0.6)
+        ns.db.bars_colors = {}
+    end)
+
+    it("refreshes all tracked bars and resets stale bars", function()
+        local viewer = CreateFrame("Frame")
+        local barA, _, texA = makeMockBarFrame(1)
+        local barB, _, texB = makeMockBarFrame(2)
+        barA._parent = viewer
+        barB._parent = viewer
+        viewer._children = { barA, barB }
+        _G["BuffBarCooldownViewer"] = viewer
+        ns.db.bars_colors = {[1] = {sR=1, sG=0, sB=0, eR=0, eG=1, eB=0}}
+
+        for _, frame in ipairs(_G._allFrames or {}) do
+            if frame._scripts and frame._scripts["OnEvent"] then
+                frame._scripts["OnEvent"](frame, "PLAYER_ENTERING_WORLD")
+                break
+            end
+        end
+
+        ns.RefreshAllBarGradients()
+
+        expect(texA._gradientCalls[#texA._gradientCalls].startColor.g).to_equal(0)
+        expect(texB._gradientCalls[#texB._gradientCalls].startColor.g).to_equal(0.5)
+
+        _G["BuffBarCooldownViewer"] = nil
+        ns.db.bars_colors = {}
     end)
 end)

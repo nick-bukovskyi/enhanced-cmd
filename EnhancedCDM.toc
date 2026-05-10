@@ -2,7 +2,7 @@
 ## Title: Enhanced CDM
 ## Notes: Enhances the Cooldown Manager with multi-row icon grids, bar layouts, keybind overlays, stack text customization, and per-bar color gradients
 ## Author: Sonterix
-## Version: 0.14.1
+## Version: 0.14.2
 ## SavedVariables: EnhancedCDMDB
 ## X-Curse-Project-ID: 1479749
 

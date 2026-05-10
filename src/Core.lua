@@ -324,23 +324,35 @@ local function GetFeedbackPrefix(frame)
     return nil
 end
 
-local function GetPushedOverlay(frame)
-    if frame._ecdmPushedTex then return frame._ecdmPushedTex end
-    local overlayFrame = CreateFrame("Frame", nil, frame)
-    overlayFrame:SetAllPoints(frame)
-    local level = frame:GetFrameLevel() + 10
-    if frame.Cooldown then
-        level = frame.Cooldown:GetFrameLevel() + 5
-    end
-    overlayFrame:SetFrameLevel(level)
-    local tex = overlayFrame:CreateTexture(nil, "OVERLAY")
-    tex:SetAtlas("UI-HUD-ActionBar-IconFrame-AddRow-Down")
+local function ResizePushedOverlay(frame)
+    if not frame or not frame._ecdmPushedTex then return end
     local w, h = frame:GetSize()
-    tex:SetSize(w * PUSHED_RATIO, h * PUSHED_RATIO)
-    tex:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    tex:Hide()
-    frame._ecdmPushedTex = tex
-    return tex
+    frame._ecdmPushedTex:SetSize(w * PUSHED_RATIO, h * PUSHED_RATIO)
+end
+
+local function GetPushedOverlay(frame)
+    if not frame._ecdmPushedTex then
+        local overlayFrame = CreateFrame("Frame", nil, frame)
+        overlayFrame:SetAllPoints(frame)
+        local level = frame:GetFrameLevel() + 10
+        if frame.Cooldown then
+            level = frame.Cooldown:GetFrameLevel() + 5
+        end
+        overlayFrame:SetFrameLevel(level)
+        local tex = overlayFrame:CreateTexture(nil, "OVERLAY")
+        tex:SetAtlas("UI-HUD-ActionBar-IconFrame-AddRow-Down")
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        tex:Hide()
+        frame._ecdmPushedTex = tex
+    end
+
+    ResizePushedOverlay(frame)
+    if not frame._ecdmPushedSizeHooked and frame.HookScript then
+        frame._ecdmPushedSizeHooked = true
+        frame:HookScript("OnSizeChanged", ResizePushedOverlay)
+    end
+
+    return frame._ecdmPushedTex
 end
 
 local function OnButtonStateChanged(btn, state)
@@ -971,15 +983,25 @@ local function ResetBarGradient(barFrame)
         CreateColor(1, 0.5, 0.25, 1))
 end
 
+local function RefreshBarGradient(barFrame)
+    local colors = db.bars_colors and db.bars_colors[barFrame.cooldownID]
+    if colors then
+        ApplyBarGradient(barFrame)
+    else
+        ResetBarGradient(barFrame)
+    end
+end
+
 local function RefreshAllBarGradients()
     if not barViewer then return end
     for _, child in ipairs({ barViewer:GetChildren() }) do
-        if child.cooldownID then ApplyBarGradient(child) end
+        if child.cooldownID then RefreshBarGradient(child) end
     end
 end
 ns.RefreshAllBarGradients = RefreshAllBarGradients
-ns.ApplyBarGradient = ApplyBarGradient
-ns.ResetBarGradient = ResetBarGradient
+ns.RefreshBarGradient = RefreshBarGradient
+ns._ApplyBarGradient = ApplyBarGradient
+ns._ResetBarGradient = ResetBarGradient
 
 -- ---------------------------------------------------------------------------
 -- Mixin hooks — catch new frames, cooldown changes, and CDM settings updates
@@ -998,7 +1020,7 @@ local function InstallMixinHooks()
                 UpdateFrameStacks(frame)
             elseif self == barViewer then
                 HookBarFrame(frame)
-                ApplyBarGradient(frame)
+                RefreshBarGradient(frame)
                 ScheduleBarsLayout()
             elseif self == essentialViewer then
                 HookEssentialFrame(frame)
@@ -1304,6 +1326,18 @@ end
 -- ---------------------------------------------------------------------------
 
 local function RegisterSlashCommands()
+    local function ParseGradientColors(text)
+        local values = { text:match("^%s*([+-]?%d*%.?%d+)%s+([+-]?%d*%.?%d+)%s+([+-]?%d*%.?%d+)%s+([+-]?%d*%.?%d+)%s+([+-]?%d*%.?%d+)%s+([+-]?%d*%.?%d+)%s*$") }
+        if #values ~= 6 then return nil end
+        for i = 1, 6 do
+            values[i] = tonumber(values[i])
+            if not values[i] or values[i] < 0 or values[i] > 1 then
+                return nil
+            end
+        end
+        return values[1], values[2], values[3], values[4], values[5], values[6]
+    end
+
     SLASH_ENHANCEDCDM1 = "/enhancedcdm"
     SLASH_ENHANCEDCDM2 = "/ecdm"
 
@@ -1608,9 +1642,7 @@ local function RegisterSlashCommands()
                         end
                         print("|cff00ccffEnhanced CDM:|r Gradient removed for " .. id)
                     elseif rest then
-                        local sR, sG, sB, eR, eG, eB = rest:match("([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)")
-                        sR, sG, sB = tonumber(sR), tonumber(sG), tonumber(sB)
-                        eR, eG, eB = tonumber(eR), tonumber(eG), tonumber(eB)
+                        local sR, sG, sB, eR, eG, eB = ParseGradientColors(rest)
                         if sR and sG and sB and eR and eG and eB then
                             db.bars_colors[id] = { sR=sR, sG=sG, sB=sB, eR=eR, eG=eG, eB=eB }
                             RefreshAllBarGradients()
@@ -1775,3 +1807,4 @@ ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._GetHotkeyText = GetHotkeyText
 ns._BuildSlotToBindingMap = BuildSlotToBindingMap
+ns._GetPushedOverlay = GetPushedOverlay

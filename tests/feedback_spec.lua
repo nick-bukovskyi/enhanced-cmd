@@ -49,3 +49,35 @@ describe("GetSlotSpellID", function()
         _G._stubActionInfo[3] = nil
     end)
 end)
+
+describe("Pushed overlay sizing", function()
+    it("refreshes existing overlay size from the current icon size", function()
+        local frame = CreateFrame("Frame")
+        frame:SetSize(45, 45)
+
+        local overlay = ns._GetPushedOverlay(frame)
+        expect(overlay._width).to_equal(51)
+        expect(overlay._height).to_equal(51)
+
+        frame:SetSize(90, 30)
+        local sameOverlay = ns._GetPushedOverlay(frame)
+
+        expect(sameOverlay).to_equal(overlay)
+        expect(sameOverlay._width).to_equal(102)
+        expect(sameOverlay._height).to_equal(34)
+    end)
+
+    it("updates overlay size from the icon OnSizeChanged hook", function()
+        local frame = CreateFrame("Frame")
+        frame:SetSize(45, 45)
+
+        local overlay = ns._GetPushedOverlay(frame)
+        frame:SetSize(90, 90)
+        local hooks = frame._hookScripts and frame._hookScripts.OnSizeChanged
+        expect(hooks ~= nil).to_be_truthy()
+        hooks[1](frame)
+
+        expect(overlay._width).to_equal(102)
+        expect(overlay._height).to_equal(102)
+    end)
+end)

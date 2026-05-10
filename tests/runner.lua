@@ -88,7 +88,7 @@ local function runSpecs()
     -- Load addon
     loadAddonFile("src/Config.lua")
     loadAddonFile("src/Core.lua")
-    -- EditMode.lua requires frames we can't stub easily; skip for now
+    loadAddonFile("src/EditMode.lua")
 
     -- Simulate ADDON_LOADED event (fires OnEvent handler from Core.lua)
     -- Scan all created frames for one with an OnEvent script
