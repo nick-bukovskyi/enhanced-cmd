@@ -1,3 +1,15 @@
+## [0.14.3] - 2026-05-10
+
+### Fixed
+
+- Tracked Buffs grid growth now preserves the anchor row/column when adding or removing tracked buffs
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.14.2] - 2026-05-10
 
 ### Fixed

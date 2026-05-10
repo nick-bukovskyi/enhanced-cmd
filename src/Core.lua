@@ -494,6 +494,165 @@ local function CalcGridPosition(index, maxPerRow, iconW, iconH, spacing, align, 
     return x, y
 end
 
+local stableEdgeCache = {}
+
+local function FormatPointNumber(value)
+    if type(value) ~= "number" then return tostring(value) end
+    return string.format("%.3f", value)
+end
+
+local function GetEdgeValue(left, bottom, right, top, preserveEdge)
+    if preserveEdge == "TOP" then
+        return top
+    elseif preserveEdge == "BOTTOM" then
+        return bottom
+    elseif preserveEdge == "LEFT" then
+        return left
+    elseif preserveEdge == "RIGHT" then
+        return right
+    end
+
+    return nil
+end
+
+local function GetViewerRect(frame)
+    if not frame or not frame.GetRect then return nil end
+
+    local left, bottom, width, height = frame:GetRect()
+    if not left or not bottom or not width or not height then return nil end
+
+    return left, bottom, left + width, bottom + height
+end
+
+local function GetPreservedEdgeDelta(targetEdge, afterLeft, afterBottom, afterRight, afterTop, preserveEdge)
+    local afterEdge = GetEdgeValue(afterLeft, afterBottom, afterRight, afterTop, preserveEdge)
+    if not targetEdge or not afterEdge then return 0, 0 end
+
+    local delta = targetEdge - afterEdge
+    if preserveEdge == "TOP" or preserveEdge == "BOTTOM" then
+        return 0, delta
+    elseif preserveEdge == "LEFT" or preserveEdge == "RIGHT" then
+        return delta, 0
+    end
+
+    return 0, 0
+end
+
+local function GetPointsKey(points)
+    local key = {}
+    for i, point in ipairs(points) do
+        key[i] = tostring(point.point) .. "|"
+            .. tostring(point.relativeTo) .. "|"
+            .. tostring(point.relativePoint) .. "|"
+            .. FormatPointNumber(point.offsetX) .. "|"
+            .. FormatPointNumber(point.offsetY)
+    end
+
+    return table.concat(key, ";")
+end
+
+local function GetStableEdgeCacheKey(frame)
+    if frame and frame.GetName then
+        local name = frame:GetName()
+        if name then return name end
+    end
+
+    return frame
+end
+
+local function GetStableEdgeCache(frame)
+    local cacheKey = GetStableEdgeCacheKey(frame)
+    return stableEdgeCache[cacheKey]
+end
+
+local function CacheStableEdge(frame, points, preserveEdge, left, bottom, right, top)
+    local cache = {
+        edge = GetEdgeValue(left, bottom, right, top, preserveEdge),
+        edgeName = preserveEdge,
+        pointsKey = GetPointsKey(points),
+    }
+    frame._ecdmStableEdge = cache.edge
+    frame._ecdmStableEdgeName = cache.edgeName
+    frame._ecdmStablePointsKey = cache.pointsKey
+    stableEdgeCache[GetStableEdgeCacheKey(frame)] = cache
+end
+
+local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
+    local points = {}
+    local numPoints = frame.GetNumPoints and frame:GetNumPoints() or 0
+    for i = 1, numPoints do
+        local point, relativeTo, relativePoint, offsetX, offsetY = frame:GetPoint(i)
+        points[i] = {
+            point = point,
+            relativeTo = relativeTo,
+            relativePoint = relativePoint,
+            offsetX = offsetX or 0,
+            offsetY = offsetY or 0,
+        }
+    end
+    local pointsKey = GetPointsKey(points)
+
+    local beforeLeft, beforeBottom, beforeRight, beforeTop = GetViewerRect(frame)
+    local targetEdge = GetEdgeValue(beforeLeft, beforeBottom, beforeRight, beforeTop, preserveEdge)
+    local stableCache = GetStableEdgeCache(frame)
+    if not stableCache and frame._ecdmStableEdge then
+        stableCache = {
+            edge = frame._ecdmStableEdge,
+            edgeName = frame._ecdmStableEdgeName,
+            pointsKey = frame._ecdmStablePointsKey,
+        }
+    end
+    if stableCache
+        and stableCache.edgeName == preserveEdge
+        and stableCache.pointsKey == pointsKey
+        and stableCache.edge then
+        targetEdge = stableCache.edge
+    end
+
+    frame:SetSize(width, height)
+
+    if not beforeLeft or #points == 0 then
+        return
+    end
+
+    local afterLeft, afterBottom, afterRight, afterTop = GetViewerRect(frame)
+    if not afterLeft then
+        return
+    end
+
+    local deltaX, deltaY = GetPreservedEdgeDelta(targetEdge, afterLeft, afterBottom, afterRight, afterTop, preserveEdge)
+    if math.abs(deltaX) < 0.01 and math.abs(deltaY) < 0.01 then
+        CacheStableEdge(frame, points, preserveEdge, afterLeft, afterBottom, afterRight, afterTop)
+        return
+    end
+
+    local scale = frame.GetScale and frame:GetScale() or 1
+    if scale < 0.01 then scale = 1 end
+
+    local clearAllPoints = frame.ClearAllPointsBase or frame.ClearAllPoints
+    local setPoint = frame.SetPointBase or frame.SetPoint
+    local adjustedPoints = {}
+
+    frame._arSettingPos = true
+    clearAllPoints(frame)
+    for i, p in ipairs(points) do
+        local offsetX = p.offsetX + (deltaX / scale)
+        local offsetY = p.offsetY + (deltaY / scale)
+        adjustedPoints[i] = {
+            point = p.point,
+            relativeTo = p.relativeTo,
+            relativePoint = p.relativePoint,
+            offsetX = offsetX,
+            offsetY = offsetY,
+        }
+        setPoint(frame, p.point, p.relativeTo, p.relativePoint, offsetX, offsetY)
+    end
+    frame._arSettingPos = false
+
+    local finalLeft, finalBottom, finalRight, finalTop = GetViewerRect(frame)
+    CacheStableEdge(frame, adjustedPoints, preserveEdge, finalLeft, finalBottom, finalRight, finalTop)
+end
+
 -- ---------------------------------------------------------------------------
 -- Layout — positions visible icons in a multi-row grid and sizes the viewer
 -- ---------------------------------------------------------------------------
@@ -540,6 +699,9 @@ local function ApplyLayout()
     local growDown = (db.growDirection == "DOWN")
     local align = db.align
     local isVertical = IsViewerVertical(viewer)
+    local preserveEdge = isVertical
+        and (growDown and "LEFT" or "RIGHT")
+        or (growDown and "TOP" or "BOTTOM")
 
     local scale = visibleBuf[1]:GetScale()
     if scale < 0.01 then scale = 1 end
@@ -603,7 +765,7 @@ local function ApplyLayout()
     local totalW = (refCols * (iconW + spacing) - spacing) * scale
     local totalH = (refRows * (iconH + spacing) - spacing) * scale
     if totalW > 0 and totalH > 0 then
-        viewer:SetSize(totalW, totalH)
+        SetViewerSizePreservingEdge(viewer, totalW, totalH, preserveEdge)
     end
 end
 
@@ -618,6 +780,15 @@ local function ScheduleLayout()
         layoutTimer = nil
         ApplyLayout()
     end)
+end
+
+local function ApplyLayoutFromViewerLayout()
+    if layoutTimer then
+        layoutTimer:Cancel()
+        layoutTimer = nil
+    end
+
+    ApplyLayout()
 end
 
 ns.ApplyLayout = ApplyLayout
@@ -1095,7 +1266,7 @@ end
 -- Hook installation — shared installer + per-viewer wrappers
 -- ---------------------------------------------------------------------------
 
-local function InstallViewerHooks(state, getViewer, hookChildFn, scheduleFn, applyFn, errorLabel, onRefreshLayout)
+local function InstallViewerHooks(state, getViewer, hookChildFn, scheduleFn, applyFn, errorLabel, onRefreshLayout, onLayout)
     if state.installed then return end
     state.installed = true
 
@@ -1104,7 +1275,11 @@ local function InstallViewerHooks(state, getViewer, hookChildFn, scheduleFn, app
 
         local v = getViewer()
         hooksecurefunc(v, "Layout", function()
-            scheduleFn()
+            if onLayout then
+                onLayout()
+            else
+                scheduleFn()
+            end
         end)
 
         -- Hook RefreshLayout to catch CDM settings changes without tainting
@@ -1135,7 +1310,8 @@ local function InstallHooks()
         function()
             ScheduleStacksRefresh()
             if ns.RefreshEditModePanel then ns.RefreshEditModePanel() end
-        end)
+        end,
+        ApplyLayoutFromViewerLayout)
 end
 
 local function InstallBarsHooks()
@@ -1805,6 +1981,7 @@ end)
 -- Test-only exports — used by tests/runner.lua, not by other addon files
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
+ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
 ns._GetHotkeyText = GetHotkeyText
 ns._BuildSlotToBindingMap = BuildSlotToBindingMap
 ns._GetPushedOverlay = GetPushedOverlay
