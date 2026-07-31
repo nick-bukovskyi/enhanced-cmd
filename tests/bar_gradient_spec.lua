@@ -1,5 +1,6 @@
 -- Tests for ApplyBarGradient and ResetBarGradient
 local ns = _G._test_ns
+local initializedBarViewer
 
 -- Helper: create a mock bar frame with a StatusBar child and trackable texture
 local function makeMockBarFrame(cooldownID)
@@ -123,6 +124,7 @@ describe("RefreshBarGradient", function()
         barB._parent = viewer
         viewer._children = { barA, barB }
         _G["BuffBarCooldownViewer"] = viewer
+        initializedBarViewer = viewer
         ns.db.bars_colors = {[1] = {sR=1, sG=0, sB=0, eR=0, eG=1, eB=0}}
 
         for _, frame in ipairs(_G._allFrames or {}) do
@@ -138,6 +140,46 @@ describe("RefreshBarGradient", function()
         expect(texB._gradientCalls[#texB._gradientCalls].startColor.g).to_equal(0.5)
 
         _G["BuffBarCooldownViewer"] = nil
+        ns.db.bars_colors = {}
+    end)
+end)
+
+describe("12.1 bar frame reassignment", function()
+    it("reapplies the gradient after SetCooldownID changes a pooled frame", function()
+        local barFrame, _, tex = makeMockBarFrame(1)
+        barFrame._parent = initializedBarViewer
+        ns.db.bars_colors = {
+            [1] = {sR=1, sG=0, sB=0, eR=1, eG=0, eB=0},
+            [2] = {sR=0, sG=0, sB=1, eR=0, eG=0, eB=1},
+        }
+        ns.RefreshBarGradient(barFrame)
+
+        barFrame.cooldownID = 2
+        local hooks = CooldownViewerItemDataMixin._secureHooks.SetCooldownID
+        hooks[#hooks](barFrame)
+
+        local call = tex._gradientCalls[#tex._gradientCalls]
+        expect(call.startColor.r).to_equal(0)
+        expect(call.startColor.b).to_equal(1)
+        ns.db.bars_colors = {}
+    end)
+
+    it("resets the gradient after PTR ResetCooldownData releases a frame", function()
+        local barFrame, _, tex = makeMockBarFrame(1)
+        barFrame._parent = initializedBarViewer
+        ns.db.bars_colors = {
+            [1] = {sR=1, sG=0, sB=0, eR=1, eG=0, eB=0},
+        }
+        ns.RefreshBarGradient(barFrame)
+
+        barFrame.cooldownID = nil
+        local hooks = CooldownViewerItemDataMixin._secureHooks.ResetCooldownData
+        hooks[#hooks](barFrame)
+
+        local call = tex._gradientCalls[#tex._gradientCalls]
+        expect(call.startColor.r).to_equal(1)
+        expect(call.startColor.g).to_equal(0.5)
+        expect(call.startColor.b).to_equal(0.25)
         ns.db.bars_colors = {}
     end)
 end)

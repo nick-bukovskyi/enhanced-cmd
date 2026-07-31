@@ -15,6 +15,13 @@ end
 
 function it(name, fn)
     local ok, err = pcall(fn)
+    local timerOk, timerErr = true, nil
+    if _G._RunPendingTimers then
+        timerOk, timerErr = pcall(_G._RunPendingTimers)
+    end
+    if ok and not timerOk then
+        ok, err = false, timerErr
+    end
     if ok then
         passed = passed + 1
         print("    [PASS] " .. name)

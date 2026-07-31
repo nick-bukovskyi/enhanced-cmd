@@ -50,6 +50,67 @@ describe("GetSlotSpellID", function()
     end)
 end)
 
+describe("GetSlotActionIDs", function()
+    local getSlotActionIDs = ns._GetSlotActionIDs
+
+    it("returns an itemID for an item action", function()
+        _G._stubActionInfo[7] = { type = "item", id = 210816 }
+
+        local spellID, itemID = getSlotActionIDs(7)
+
+        expect(spellID).to_be_nil()
+        expect(itemID).to_equal(210816)
+        _G._stubActionInfo[7] = nil
+    end)
+
+    it("returns both available identities for a macro", function()
+        _G._stubActionInfo[10] = { type = "macro", id = 42 }
+        _G._stubMacroSpells[42] = 12345
+        _G._stubMacroItems[42] = "item:212265:0:0:0"
+
+        local spellID, itemID = getSlotActionIDs(10)
+
+        expect(spellID).to_equal(12345)
+        expect(itemID).to_equal(212265)
+        _G._stubActionInfo[10] = nil
+        _G._stubMacroSpells[42] = nil
+        _G._stubMacroItems[42] = nil
+    end)
+
+    it("matches an equipped item to its Essential CDM icon", function()
+        local oldEssential = ns.essentialViewer
+        local essential = CreateFrame("Frame")
+        local icon = CreateFrame("Frame", nil, essential)
+        icon.cooldownID = 9001
+        icon.GetEquipSlot = function() return 13 end
+        _G._stubInventoryItems[13] = 219308
+        ns.essentialViewer = essential
+
+        expect(ns._FindCDMIcon(nil, 219308)).to_equal(icon)
+
+        ns.essentialViewer = oldEssential
+        _G._stubInventoryItems[13] = nil
+    end)
+
+    it("prefers an item icon when a macro exposes spell and item IDs", function()
+        local oldEssential = ns.essentialViewer
+        local essential = CreateFrame("Frame")
+        local spellIcon = CreateFrame("Frame", nil, essential)
+        spellIcon.cooldownID = 1
+        spellIcon.GetBaseSpellID = function() return 12345 end
+        local itemIcon = CreateFrame("Frame", nil, essential)
+        itemIcon.cooldownID = 2
+        itemIcon.GetEquipSlot = function() return 13 end
+        _G._stubInventoryItems[13] = 219308
+        ns.essentialViewer = essential
+
+        expect(ns._FindCDMIcon(12345, 219308)).to_equal(itemIcon)
+
+        ns.essentialViewer = oldEssential
+        _G._stubInventoryItems[13] = nil
+    end)
+end)
+
 describe("Pushed overlay sizing", function()
     it("refreshes existing overlay size from the current icon size", function()
         local frame = CreateFrame("Frame")

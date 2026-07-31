@@ -11,13 +11,11 @@ local viewer
 local hookedFrames = {}
 local mixinHooksInstalled = false
 local hookState = { installed = false }
-local layoutTimer = nil
 local VERSION
 
 local barViewer
 local barHookedFrames = {}
 local barHookState = { installed = false }
-local barLayoutTimer = nil
 
 local essentialViewer
 local utilityViewer
@@ -25,11 +23,31 @@ local essentialHookedFrames = {}
 local utilityHookedFrames = {}
 local essentialHookState = { installed = false }
 local utilityHookState = { installed = false }
-local essentialLayoutTimer = nil
-local utilityLayoutTimer = nil
 local slotToBinding = {}
+local bindingSlots = {}
 local initTicker = nil
 local feedbackHookedButtons = {}
+
+local function CreateNextFrameScheduler(callback)
+    local timer
+
+    local function Schedule()
+        if timer then return end
+        timer = C_Timer.NewTimer(0, function()
+            timer = nil
+            callback()
+        end)
+    end
+
+    local function Cancel()
+        if not timer then return end
+        timer:Cancel()
+        timer = nil
+    end
+
+    return Schedule, Cancel
+end
+ns.CreateNextFrameScheduler = CreateNextFrameScheduler
 
 -- ---------------------------------------------------------------------------
 -- Keybinding engine — maps spellID → formatted hotkey text
@@ -50,6 +68,7 @@ local ACTION_BAR_BINDINGS = {
 -- Builds slotNumber → bindingCommandName lookup from actual button frames
 local function BuildSlotToBindingMap()
     wipe(slotToBinding)
+    wipe(bindingSlots)
     for _, info in ipairs(ACTION_BAR_BINDINGS) do
         for i = 1, 12 do
             local btn = _G[info.frame .. i]
@@ -64,7 +83,11 @@ local function BuildSlotToBindingMap()
                     slot = i
                 end
                 if slot then
-                    slotToBinding[tonumber(slot)] = info.binding .. i
+                    slot = tonumber(slot)
+                    if not slotToBinding[slot] then
+                        bindingSlots[#bindingSlots + 1] = slot
+                    end
+                    slotToBinding[slot] = info.binding .. i
                 end
             end
         end
@@ -102,6 +125,14 @@ local function FormatKeyText(key)
     return key
 end
 
+local function GetSlotKeyText(slot, shorten)
+    local bindingName = slotToBinding[slot]
+    if not bindingName then return nil end
+    local key = GetBindingKey(bindingName)
+    if not key then return nil end
+    return shorten and FormatKeyText(key) or key
+end
+
 -- Returns formatted hotkey text for a spellID, or nil if not bound
 -- When shorten is false, returns the raw key name without abbreviation
 local function GetHotkeyText(spellID, shorten)
@@ -124,12 +155,85 @@ local function GetHotkeyText(spellID, shorten)
 
     -- Check each slot for a binding (prefer the first one found)
     for _, slot in ipairs(slots) do
-        local bindingName = slotToBinding[slot]
-        if bindingName then
-            local key = GetBindingKey(bindingName)
-            if key then
-                return shorten and FormatKeyText(key) or key
-            end
+        local text = GetSlotKeyText(slot, shorten)
+        if text then return text end
+    end
+
+    return nil
+end
+
+local function GetMacroItemID(macroID)
+    if not macroID or not GetMacroItem then return nil end
+
+    local itemName, itemLink = GetMacroItem(macroID)
+    local itemIdentifier = itemLink or itemName
+    if not itemIdentifier then return nil end
+
+    if GetItemInfoInstant then
+        return GetItemInfoInstant(itemIdentifier)
+    end
+
+    if type(itemIdentifier) == "number" then
+        return itemIdentifier
+    end
+
+    return tonumber(tostring(itemIdentifier):match("item:(%d+)"))
+end
+
+local function GetSlotActionIDs(slot)
+    if not slot or slot == 0 then return nil, nil end
+
+    local actionType, id = GetActionInfo(slot)
+    if actionType == "spell" then
+        return id, nil
+    elseif actionType == "item" then
+        return nil, id
+    elseif actionType == "macro" and id then
+        local spellID = GetMacroSpell and GetMacroSpell(id)
+        return spellID, GetMacroItemID(id)
+    end
+
+    return nil, nil
+end
+
+local function GetFrameItemID(frame)
+    if not frame then return nil end
+
+    local equipSlot = frame.GetEquipSlot and frame:GetEquipSlot()
+    if equipSlot and GetInventoryItemID then
+        local itemID = GetInventoryItemID("player", equipSlot)
+        if itemID then return itemID end
+    end
+
+    local itemLocation = frame.GetItemLocation and frame:GetItemLocation()
+    if itemLocation and C_Item and C_Item.GetItemID then
+        local itemID = C_Item.GetItemID(itemLocation)
+        if itemID then return itemID end
+    end
+
+    if frame.GetSpellCategoryTooltipItemID then
+        return frame:GetSpellCategoryTooltipItemID()
+    end
+
+    return nil
+end
+
+local function GetFrameActionIDs(frame)
+    if not frame then return nil, nil end
+
+    local spellID = (frame.GetBaseSpellID and frame:GetBaseSpellID())
+        or frame.rangeCheckSpellID
+    return spellID, GetFrameItemID(frame)
+end
+
+local function GetItemHotkeyText(itemID, shorten)
+    if not itemID then return nil end
+
+    for _, slot in ipairs(bindingSlots) do
+        local _, slotItemID = GetSlotActionIDs(slot)
+        if slotItemID == itemID then
+            local text = GetSlotKeyText(slot, shorten)
+            if text then return text end
         end
     end
 
@@ -181,10 +285,8 @@ local function UpdateFrameHotkey(frame)
         return
     end
 
-    -- Get spellID from the frame
-    local spellID = (frame.GetBaseSpellID and frame:GetBaseSpellID())
-        or frame.rangeCheckSpellID
-    if not spellID then
+    local spellID, itemID = GetFrameActionIDs(frame)
+    if not spellID and not itemID then
         if frame._ecdmHotkeyText then
             frame._ecdmHotkeyText:Hide()
         end
@@ -192,7 +294,8 @@ local function UpdateFrameHotkey(frame)
     end
 
     local shorten = db[prefix .. "shorten"]
-    local text = GetHotkeyText(spellID, shorten)
+    local text = itemID and GetItemHotkeyText(itemID, shorten)
+        or GetHotkeyText(spellID, shorten)
     if not text then
         if frame._ecdmHotkeyText then
             frame._ecdmHotkeyText:Hide()
@@ -249,14 +352,7 @@ end
 
 ns.RefreshAllHotkeys = RefreshAllHotkeys
 
-local hotkeyRefreshTimer = nil
-local function ScheduleHotkeyRefresh()
-    if hotkeyRefreshTimer then hotkeyRefreshTimer:Cancel() end
-    hotkeyRefreshTimer = C_Timer.NewTimer(0, function()
-        hotkeyRefreshTimer = nil
-        RefreshAllHotkeys()
-    end)
-end
+local ScheduleHotkeyRefresh = CreateNextFrameScheduler(RefreshAllHotkeys)
 
 -- ---------------------------------------------------------------------------
 -- Click feedback engine — mirrors action bar pushed state on CDM icons
@@ -264,19 +360,8 @@ end
 
 local PUSHED_RATIO = 51 / 45
 
--- NOTE: GetMacroSpell return value may vary by WoW version. If macros don't
--- resolve correctly in-game testing, check if it returns (name, ...) instead
--- of spellID and switch to select(2, GetMacroSpell(id)) or use GetMacroInfo.
 local function GetSlotSpellID(slot)
-    if not slot or slot == 0 then return nil end
-    local actionType, id = GetActionInfo(slot)
-    if actionType == "spell" then
-        return id
-    elseif actionType == "macro" and id then
-        local spellID = GetMacroSpell(id)
-        return spellID
-    end
-    return nil
+    return GetSlotActionIDs(slot)
 end
 ns._GetSlotSpellID = GetSlotSpellID
 
@@ -286,23 +371,29 @@ local function GetButtonSlot(btn)
         or btn.action
 end
 
-local function FindCDMIcon(spellID)
-    if not spellID then return nil end
+local function FindCDMIconByActionID(actionID, isItem)
+    if not actionID then return nil end
     local viewers = { ns.essentialViewer, ns.utilityViewer }
     for _, v in ipairs(viewers) do
         if v then
             local children = { v:GetChildren() }
             for _, child in ipairs(children) do
                 if child.cooldownID then
-                    local childSpell = (child.GetBaseSpellID and child:GetBaseSpellID())
-                        or child.rangeCheckSpellID
-                    if childSpell == spellID then
-                        return child
-                    end
-                    if C_Spell and C_Spell.GetOverrideSpell then
-                        local overrideID = C_Spell.GetOverrideSpell(childSpell or 0)
-                        if overrideID and overrideID == spellID then
+                    if isItem then
+                        if GetFrameItemID(child) == actionID then
                             return child
+                        end
+                    else
+                        local childSpell = (child.GetBaseSpellID and child:GetBaseSpellID())
+                            or child.rangeCheckSpellID
+                        if childSpell == actionID then
+                            return child
+                        end
+                        if C_Spell and C_Spell.GetOverrideSpell then
+                            local overrideID = C_Spell.GetOverrideSpell(childSpell or 0)
+                            if overrideID and overrideID == actionID then
+                                return child
+                            end
                         end
                     end
                 end
@@ -310,6 +401,11 @@ local function FindCDMIcon(spellID)
         end
     end
     return nil
+end
+
+local function FindCDMIcon(spellID, itemID)
+    return FindCDMIconByActionID(itemID, true)
+        or FindCDMIconByActionID(spellID, false)
 end
 
 -- Reads from ns.* (kept in sync by TryInit) so tests can control comparison targets
@@ -357,10 +453,10 @@ end
 
 local function OnButtonStateChanged(btn, state)
     local slot = GetButtonSlot(btn)
-    local spellID = GetSlotSpellID(slot)
-    if not spellID then return end
+    local spellID, itemID = GetSlotActionIDs(slot)
+    if not spellID and not itemID then return end
 
-    local cdmIcon = FindCDMIcon(spellID)
+    local cdmIcon = FindCDMIcon(spellID, itemID)
     if not cdmIcon then return end
 
     local prefix = GetFeedbackPrefix(cdmIcon)
@@ -431,14 +527,7 @@ local function RefreshAllStacks()
 end
 ns.RefreshAllStacks = RefreshAllStacks
 
-local stacksRefreshTimer = nil
-local function ScheduleStacksRefresh()
-    if stacksRefreshTimer then stacksRefreshTimer:Cancel() end
-    stacksRefreshTimer = C_Timer.NewTimer(0, function()
-        stacksRefreshTimer = nil
-        RefreshAllStacks()
-    end)
-end
+local ScheduleStacksRefresh = CreateNextFrameScheduler(RefreshAllStacks)
 
 -- ---------------------------------------------------------------------------
 -- Grid math — pure position calculation, no frame dependencies
@@ -773,21 +862,10 @@ end
 -- Debounced scheduling — batches rapid triggers into a single next-frame layout
 -- ---------------------------------------------------------------------------
 
-local function ScheduleLayout()
-    if layoutTimer then layoutTimer:Cancel() end
-
-    layoutTimer = C_Timer.NewTimer(0, function()
-        layoutTimer = nil
-        ApplyLayout()
-    end)
-end
+local ScheduleLayout, CancelScheduledLayout = CreateNextFrameScheduler(ApplyLayout)
 
 local function ApplyLayoutFromViewerLayout()
-    if layoutTimer then
-        layoutTimer:Cancel()
-        layoutTimer = nil
-    end
-
+    CancelScheduledLayout()
     ApplyLayout()
 end
 
@@ -801,7 +879,7 @@ ns.ScheduleLayout = ScheduleLayout
 -- Shared hook installer for both icon and bar viewer children.
 -- Uses getter functions so hooks always read the current viewer/growDown
 -- even after viewer recreation in TryInit.
-local function HookViewerChild(frame, hookedSet, getViewer, getGrowDown, scheduleFn)
+local function HookViewerChild(frame, hookedSet, getViewer, getGrowDown, scheduleFn, shouldScheduleVisibility)
     if hookedSet[frame] then return end
     hookedSet[frame] = true
 
@@ -834,10 +912,12 @@ local function HookViewerChild(frame, hookedSet, getViewer, getGrowDown, schedul
     -- (only fires on explicit Lua Show/Hide calls)
     frame:HookScript("OnShow", function(self)
         if self:GetParent() ~= getViewer() then return end
+        if shouldScheduleVisibility and not shouldScheduleVisibility() then return end
         scheduleFn()
     end)
     frame:HookScript("OnHide", function(self)
         if self:GetParent() ~= getViewer() then return end
+        if shouldScheduleVisibility and not shouldScheduleVisibility() then return end
         scheduleFn()
     end)
 end
@@ -846,12 +926,20 @@ HookFrame = function(frame)
     HookViewerChild(frame, hookedFrames,
         function() return viewer end,
         function() return db.growDirection == "DOWN" end,
-        ScheduleLayout)
+        ScheduleLayout,
+        function() return db.layout == "DYNAMIC" end)
 end
 
 -- ---------------------------------------------------------------------------
 -- Bars layout — positions bar children in a vertical column or horizontal grid
 -- ---------------------------------------------------------------------------
+
+local function GetBarsPreserveEdge(isHorizontal, growDown)
+    if not isHorizontal and not growDown then
+        return "BOTTOM"
+    end
+    return "TOP"
+end
 
 local function ApplyBarsLayout()
     if not barViewer then return end
@@ -921,7 +1009,8 @@ local function ApplyBarsLayout()
         local totalW = (refCols * (barW + spacing) - spacing) * scale
         local totalH = (refRows * (barH + spacing) - spacing) * scale
         if totalW > 0 and totalH > 0 then
-            barViewer:SetSize(totalW, totalH)
+            SetViewerSizePreservingEdge(barViewer, totalW, totalH,
+                GetBarsPreserveEdge(true, true))
         end
     else
         -- Single column (vertical)
@@ -948,7 +1037,8 @@ local function ApplyBarsLayout()
         local totalW = barW * scale
         local totalH = (refRows * (barH + spacing) - spacing) * scale
         if totalW > 0 and totalH > 0 then
-            barViewer:SetSize(totalW, totalH)
+            SetViewerSizePreservingEdge(barViewer, totalW, totalH,
+                GetBarsPreserveEdge(false, growDown))
         end
     end
 end
@@ -957,14 +1047,7 @@ end
 -- Bars debounced scheduling
 -- ---------------------------------------------------------------------------
 
-local function ScheduleBarsLayout()
-    if barLayoutTimer then barLayoutTimer:Cancel() end
-
-    barLayoutTimer = C_Timer.NewTimer(0, function()
-        barLayoutTimer = nil
-        ApplyBarsLayout()
-    end)
-end
+local ScheduleBarsLayout = CreateNextFrameScheduler(ApplyBarsLayout)
 
 ns.ApplyBarsLayout = ApplyBarsLayout
 ns.ScheduleBarsLayout = ScheduleBarsLayout
@@ -981,7 +1064,8 @@ HookBarFrame = function(frame)
                 or (db.bars_align ~= "UP")
                 or (db.bars_layout ~= "DYNAMIC")
         end,
-        ScheduleBarsLayout)
+        ScheduleBarsLayout,
+        function() return db.bars_layout == "DYNAMIC" end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1085,21 +1169,8 @@ local function ApplyUtilityLayout()
     end)
 end
 
-local function ScheduleEssentialLayout()
-    if essentialLayoutTimer then essentialLayoutTimer:Cancel() end
-    essentialLayoutTimer = C_Timer.NewTimer(0, function()
-        essentialLayoutTimer = nil
-        ApplyEssentialLayout()
-    end)
-end
-
-local function ScheduleUtilityLayout()
-    if utilityLayoutTimer then utilityLayoutTimer:Cancel() end
-    utilityLayoutTimer = C_Timer.NewTimer(0, function()
-        utilityLayoutTimer = nil
-        ApplyUtilityLayout()
-    end)
-end
+local ScheduleEssentialLayout = CreateNextFrameScheduler(ApplyEssentialLayout)
+local ScheduleUtilityLayout = CreateNextFrameScheduler(ApplyUtilityLayout)
 
 ns.ApplyEssentialLayout = ApplyEssentialLayout
 ns.ApplyUtilityLayout = ApplyUtilityLayout
@@ -1196,14 +1267,12 @@ local function InstallMixinHooks()
             elseif self == essentialViewer then
                 HookEssentialFrame(frame)
                 ScheduleEssentialLayout()
-                BuildSlotToBindingMap()
-                UpdateFrameHotkey(frame)
+                ScheduleHotkeyRefresh()
                 UpdateFrameStacks(frame)
             elseif self == utilityViewer then
                 HookUtilityFrame(frame)
                 ScheduleUtilityLayout()
-                BuildSlotToBindingMap()
-                UpdateFrameHotkey(frame)
+                ScheduleHotkeyRefresh()
                 UpdateFrameStacks(frame)
             end
         end)
@@ -1217,6 +1286,7 @@ local function InstallMixinHooks()
                 ScheduleLayout()
                 UpdateFrameStacks(frame)
             elseif parent == barViewer then
+                RefreshBarGradient(frame)
                 ScheduleBarsLayout()
             elseif parent == essentialViewer then
                 ScheduleEssentialLayout()
@@ -1234,6 +1304,7 @@ local function InstallMixinHooks()
             if parent == viewer then
                 ScheduleLayout()
             elseif parent == barViewer then
+                RefreshBarGradient(frame)
                 ScheduleBarsLayout()
             elseif parent == essentialViewer then
                 ScheduleEssentialLayout()
@@ -1251,11 +1322,30 @@ local function InstallMixinHooks()
         if CooldownViewerItemDataMixin.SetCooldownID then
             hooksecurefunc(CooldownViewerItemDataMixin, "SetCooldownID", function(self)
                 DispatchSchedule(self)
+                if ns.ScheduleSettingsBarScan then ns.ScheduleSettingsBarScan() end
             end)
         end
-        if CooldownViewerItemDataMixin.ClearCooldownID then
+        -- 12.1 ClearCooldownID delegates to ResetCooldownData; hook only the
+        -- reset method there so a single clear does not dispatch twice.
+        if CooldownViewerItemDataMixin.ClearCooldownID
+            and not CooldownViewerItemDataMixin.ResetCooldownData then
             hooksecurefunc(CooldownViewerItemDataMixin, "ClearCooldownID", function(self)
                 DispatchClear(self)
+                if ns.ScheduleSettingsBarScan then ns.ScheduleSettingsBarScan() end
+            end)
+        end
+        if CooldownViewerItemDataMixin.ResetCooldownData then
+            hooksecurefunc(CooldownViewerItemDataMixin, "ResetCooldownData", function(self)
+                DispatchClear(self)
+                if ns.ScheduleSettingsBarScan then ns.ScheduleSettingsBarScan() end
+            end)
+        end
+        if CooldownViewerItemDataMixin.UpdateFromSpellCategory then
+            hooksecurefunc(CooldownViewerItemDataMixin, "UpdateFromSpellCategory", function(self)
+                local parent = self and self:GetParent()
+                if parent == essentialViewer or parent == utilityViewer then
+                    UpdateFrameHotkey(self)
+                end
             end)
         end
     end
@@ -1949,6 +2039,8 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
@@ -1973,8 +2065,10 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         TryInit()
     elseif event == "UPDATE_BINDINGS"
         or event == "ACTIONBAR_SLOT_CHANGED"
+        or event == "ACTIONBAR_PAGE_CHANGED"
+        or event == "PLAYER_EQUIPMENT_CHANGED"
         or event == "PLAYER_SPECIALIZATION_CHANGED" then
-        RefreshAllHotkeys()
+        ScheduleHotkeyRefresh()
     end
 end)
 
@@ -1982,6 +2076,11 @@ end)
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
+ns._GetBarsPreserveEdge = GetBarsPreserveEdge
 ns._GetHotkeyText = GetHotkeyText
+ns._GetItemHotkeyText = GetItemHotkeyText
 ns._BuildSlotToBindingMap = BuildSlotToBindingMap
+ns._GetSlotActionIDs = GetSlotActionIDs
+ns._GetFrameActionIDs = GetFrameActionIDs
+ns._FindCDMIcon = FindCDMIcon
 ns._GetPushedOverlay = GetPushedOverlay

@@ -31,6 +31,7 @@ local FrameMixin = {}
 FrameMixin.__index = FrameMixin
 
 function FrameMixin:GetParent() return self._parent end
+function FrameMixin:GetName() return self._name end
 function FrameMixin:GetChildren() return (unpack or table.unpack)(self._children or {}) end
 function FrameMixin:GetObjectType() return self._type or "Frame" end
 function FrameMixin:GetStatusBarTexture() return self._statusBarTexture end
@@ -58,7 +59,10 @@ function FrameMixin:SetParent(parent)
 end
 function FrameMixin:SetWidth(w) self._width = w end
 function FrameMixin:SetHeight(h) self._height = h end
-function FrameMixin:RegisterEvent() end
+function FrameMixin:RegisterEvent(event)
+    self._events = self._events or {}
+    self._events[event] = true
+end
 function FrameMixin:SetScript(event, handler)
     self._scripts = self._scripts or {}
     self._scripts[event] = handler
@@ -110,15 +114,15 @@ function FrameMixin:SetBackdropBorderColor() end
 function FrameMixin:CreateFontString()
     return setmetatable({
         SetPoint = function() end,
-        SetText = function() end,
+        SetText = function(self, text) self._text = text end,
         SetTextColor = function() end,
         SetFont = function() end,
         SetJustifyH = function() end,
         SetWidth = function() end,
         SetHeight = function() end,
         ClearAllPoints = function() end,
-        Show = function() end,
-        Hide = function() end,
+        Show = function(self) self._shown = true end,
+        Hide = function(self) self._shown = false end,
         GetStringHeight = function() return 14 end,
     }, {})
 end
@@ -176,13 +180,47 @@ end
 
 -- C_Timer stub
 C_Timer = C_Timer or {}
+local pendingTimers = {}
 function C_Timer.NewTimer(delay, func)
-    -- In tests, execute immediately for predictability
-    func()
-    return { Cancel = function() end }
+    local timer = {
+        delay = delay,
+        func = func,
+        cancelled = false,
+    }
+    function timer:Cancel()
+        self.cancelled = true
+    end
+    pendingTimers[#pendingTimers + 1] = timer
+    return timer
 end
 function C_Timer.NewTicker(interval, func)
     return { Cancel = function() end }
+end
+
+function _G._RunPendingTimers()
+    local passes = 0
+    while #pendingTimers > 0 do
+        passes = passes + 1
+        if passes > 100 then
+            error("timer queue did not settle")
+        end
+
+        local timers = pendingTimers
+        pendingTimers = {}
+        for _, timer in ipairs(timers) do
+            if not timer.cancelled then
+                timer.func()
+            end
+        end
+    end
+end
+
+function _G._GetPendingTimerCount()
+    local count = 0
+    for _, timer in ipairs(pendingTimers) do
+        if not timer.cancelled then count = count + 1 end
+    end
+    return count
 end
 
 -- C_AddOns stub
@@ -226,6 +264,28 @@ function GetMacroSpell(macroID)
     return _G._stubMacroSpells[macroID]
 end
 
+-- GetMacroItem stub (configurable via _stubMacroItems)
+_G._stubMacroItems = {}
+function GetMacroItem(macroID)
+    return _G._stubMacroItems[macroID]
+end
+
+function GetItemInfoInstant(item)
+    if type(item) == "number" then return item end
+    return tonumber(tostring(item):match("item:(%d+)"))
+end
+
+-- Equipped-item stubs (configurable via _stubInventoryItems)
+_G._stubInventoryItems = {}
+function GetInventoryItemID(unit, equipSlot)
+    return _G._stubInventoryItems[equipSlot]
+end
+
+C_Item = C_Item or {}
+function C_Item.GetItemID(itemLocation)
+    return itemLocation and itemLocation.itemID
+end
+
 -- Event registry stub
 EventRegistry = EventRegistry or {}
 function EventRegistry:RegisterCallback(...) end
@@ -243,9 +303,16 @@ end
 -- Slash command globals
 SlashCmdList = SlashCmdList or {}
 
--- Mixin stubs (nil by default, some tests may set these)
-CooldownViewerMixin = nil
-CooldownViewerItemDataMixin = nil
+-- Mixin stubs
+CooldownViewerMixin = {
+    OnAcquireItemFrame = function() end,
+}
+CooldownViewerItemDataMixin = {
+    SetCooldownID = function() end,
+    ClearCooldownID = function() end,
+    ResetCooldownData = function() end,
+    UpdateFromSpellCategory = function() end,
+}
 EditModeManagerFrame = nil
 
 -- UIParent stub

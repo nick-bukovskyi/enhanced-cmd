@@ -18,6 +18,9 @@ local function cleanup(...)
     wipe(_G._stubBindingKeys)
     wipe(_G._stubSpellActionButtons)
     wipe(_G._stubOverrideSpells)
+    wipe(_G._stubActionInfo)
+    wipe(_G._stubMacroItems)
+    wipe(_G._stubInventoryItems)
 end
 
 describe("BuildSlotToBindingMap", function()
@@ -130,5 +133,57 @@ describe("GetHotkeyText", function()
         -- No key for ACTIONBUTTON1, so should fall through to slot 2
         expect(ns._GetHotkeyText(800, false)).to_equal("F1")
         teardown()
+    end)
+end)
+
+describe("GetItemHotkeyText", function()
+    it("returns the key for a direct item action", function()
+        makeButton("ActionButton1", 1)
+        ns._BuildSlotToBindingMap()
+        _G._stubActionInfo[1] = { type = "item", id = 210816 }
+        _G._stubBindingKeys["ACTIONBUTTON1"] = "SHIFT-1"
+
+        expect(ns._GetItemHotkeyText(210816, true)).to_equal("S1")
+
+        cleanup("ActionButton1")
+    end)
+
+    it("returns the key for an item macro", function()
+        makeButton("ActionButton2", 2)
+        ns._BuildSlotToBindingMap()
+        _G._stubActionInfo[2] = { type = "macro", id = 42 }
+        _G._stubMacroItems[42] = "item:212265:0:0:0"
+        _G._stubBindingKeys["ACTIONBUTTON2"] = "Q"
+
+        expect(ns._GetItemHotkeyText(212265, false)).to_equal("Q")
+
+        cleanup("ActionButton2")
+    end)
+end)
+
+describe("Cooldown item identity", function()
+    it("resolves the currently equipped item from a CDM equipment slot", function()
+        local frame = {
+            GetEquipSlot = function() return 13 end,
+            GetBaseSpellID = function() return nil end,
+        }
+        _G._stubInventoryItems[13] = 219308
+
+        local spellID, itemID = ns._GetFrameActionIDs(frame)
+
+        expect(spellID).to_be_nil()
+        expect(itemID).to_equal(219308)
+        wipe(_G._stubInventoryItems)
+    end)
+
+    it("resolves a consumable from Blizzard's category item fallback", function()
+        local frame = {
+            GetBaseSpellID = function() return nil end,
+            GetSpellCategoryTooltipItemID = function() return 212265 end,
+        }
+
+        local _, itemID = ns._GetFrameActionIDs(frame)
+
+        expect(itemID).to_equal(212265)
     end)
 end)

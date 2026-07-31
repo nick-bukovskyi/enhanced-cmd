@@ -1,3 +1,34 @@
+## [0.15.0] - 2026-07-30
+
+&nbsp;
+
+### Added
+
+- Support for WoW 12.0.7 and the upcoming WoW 12.1.0 client
+- Hotkey labels and the yellow pressed glow now work with Cooldown Manager trinkets, consumables, and item macros
+
+&nbsp;
+
+### Fixed
+
+- Custom bar gradients stay correct when Cooldown Manager reuses an existing bar, including the new WoW 12.1 update behavior
+- Hotkey labels update after changing action bar pages or equipped items
+- Tracked bars set to grow upward stay anchored instead of shifting when the list changes height
+
+&nbsp;
+
+### Changed
+
+- Improved performance when many tracked abilities update at once
+- Reduced unnecessary layout work for fixed tracked buff and bar layouts
+- Reduced hotkey lookup work when Cooldown Manager adds or refreshes several icons together
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.14.3] - 2026-05-10
 
 ### Fixed

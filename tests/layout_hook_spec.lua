@@ -68,4 +68,71 @@ describe("Layout hook timing", function()
 
         expect(cancelCount).to_equal(1)
     end)
+
+    it("only schedules buff visibility changes in dynamic mode", function()
+        local buffViewer = createViewer("BuffIconCooldownViewer")
+        local child = CreateFrame("Frame", nil, buffViewer)
+        child.cooldownID = 1
+        local acquireHooks = CooldownViewerMixin._secureHooks.OnAcquireItemFrame
+        acquireHooks[#acquireHooks](buffViewer, child)
+        _G._RunPendingTimers()
+
+        local visibilityHooks = child._hookScripts.OnShow
+        local oldLayout = ns.db.layout
+        ns.db.layout = "STATIC"
+        visibilityHooks[1](child)
+        expect(_G._GetPendingTimerCount()).to_equal(0)
+
+        ns.db.layout = "DYNAMIC"
+        visibilityHooks[1](child)
+        expect(_G._GetPendingTimerCount()).to_equal(1)
+        _G._RunPendingTimers()
+        ns.db.layout = oldLayout
+    end)
+
+    it("only schedules bar visibility changes in dynamic mode", function()
+        local barViewer = createViewer("BuffBarCooldownViewer")
+        local child = CreateFrame("Frame", nil, barViewer)
+        child.cooldownID = 1
+        local acquireHooks = CooldownViewerMixin._secureHooks.OnAcquireItemFrame
+        acquireHooks[#acquireHooks](barViewer, child)
+        _G._RunPendingTimers()
+
+        local visibilityHooks = child._hookScripts.OnHide
+        local oldLayout = ns.db.bars_layout
+        ns.db.bars_layout = "STATIC"
+        visibilityHooks[1](child)
+        expect(_G._GetPendingTimerCount()).to_equal(0)
+
+        ns.db.bars_layout = "DYNAMIC"
+        visibilityHooks[1](child)
+        expect(_G._GetPendingTimerCount()).to_equal(1)
+        _G._RunPendingTimers()
+        ns.db.bars_layout = oldLayout
+    end)
+
+    it("refreshes a consumable hotkey when 12.1 changes its category item", function()
+        local essentialViewer = createViewer("EssentialCooldownViewer")
+        local child = CreateFrame("Frame", nil, essentialViewer)
+        child.cooldownID = 1
+        child.GetSpellCategoryTooltipItemID = function() return 212265 end
+        local button = CreateFrame("Button", "ActionButton1")
+        button:SetAttribute("action", 1)
+        _G._stubActionInfo[1] = { type = "item", id = 212265 }
+        _G._stubBindingKeys.ACTIONBUTTON1 = "Q"
+        ns._BuildSlotToBindingMap()
+
+        local oldShow = ns.db.essential_hotkeys_show
+        ns.db.essential_hotkeys_show = true
+        local hooks = CooldownViewerItemDataMixin._secureHooks.UpdateFromSpellCategory
+        hooks[#hooks](child)
+
+        expect(child._ecdmHotkeyText._text).to_equal("Q")
+        expect(child._ecdmHotkeyText._shown).to_equal(true)
+
+        ns.db.essential_hotkeys_show = oldShow
+        _G.ActionButton1 = nil
+        _G._stubActionInfo[1] = nil
+        _G._stubBindingKeys.ACTIONBUTTON1 = nil
+    end)
 end)

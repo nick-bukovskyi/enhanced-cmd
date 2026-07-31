@@ -1617,15 +1617,23 @@ end
 
 -- Apply gradient previews to settings-panel bar entries after tab/view change
 local settingsPreviewHooked = false
-local function ScheduleSettingsBarScan()
+local function GetSettingsFrameForBarScan()
     local settingsFrame = _G["CooldownViewerSettings"]
-    if not settingsFrame or not settingsFrame:IsVisible() then return end
+    if not settingsFrame or not settingsFrame:IsVisible() then return nil end
     local db = ns.db
-    if not db or not db.bars_colors or not next(db.bars_colors) then return end
-    -- Delay one frame so scroll pool entries are created
-    C_Timer.NewTimer(0, function()
-        ScanAndApplyBarPreviews(settingsFrame, 0)
-    end)
+    if not db or not db.bars_colors or not next(db.bars_colors) then return nil end
+    return settingsFrame
+end
+
+local ScheduleSettingsBarScanOnce = ns.CreateNextFrameScheduler(function()
+    local settingsFrame = GetSettingsFrameForBarScan()
+    if settingsFrame then ScanAndApplyBarPreviews(settingsFrame, 0) end
+end)
+
+local function ScheduleSettingsBarScan()
+    if not GetSettingsFrameForBarScan() then return end
+    -- Delay one frame so scroll pool entries are created.
+    ScheduleSettingsBarScanOnce()
 end
 ns.ScheduleSettingsBarScan = ScheduleSettingsBarScan
 
