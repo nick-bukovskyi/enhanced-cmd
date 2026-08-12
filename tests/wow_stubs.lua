@@ -41,6 +41,7 @@ function FrameMixin:GetWidth() return self._width or 0 end
 function FrameMixin:GetHeight() return self._height or 0 end
 function FrameMixin:GetSize() return self._width or 0, self._height or 0 end
 function FrameMixin:GetScale() return self._scale or 1 end
+function FrameMixin:GetEffectiveScale() return self._effectiveScale or self:GetScale() end
 function FrameMixin:SetPoint(...) end
 function FrameMixin:ClearAllPoints() end
 function FrameMixin:SetAllPoints() end
@@ -76,6 +77,7 @@ function FrameMixin:HookScript(event, handler)
     table.insert(self._hookScripts[event], handler)
 end
 function FrameMixin:Layout() self._layoutCalled = true end
+function FrameMixin:OnAnyEditModeSystemAnchorChanged() end
 function FrameMixin:SetText(text) self._text = text end
 function FrameMixin:GetText() return self._text end
 function FrameMixin:SetNormalFontObject() end

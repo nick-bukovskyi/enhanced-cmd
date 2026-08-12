@@ -69,6 +69,30 @@ describe("Layout hook timing", function()
         expect(cancelCount).to_equal(1)
     end)
 
+    it("relayouts when an Edit Mode anchor dependency moves", function()
+        local viewerNames = {
+            "BuffIconCooldownViewer",
+            "BuffBarCooldownViewer",
+            "EssentialCooldownViewer",
+            "UtilityCooldownViewer",
+        }
+        for _, name in ipairs(viewerNames) do
+            createViewer(name)
+        end
+        fireEvent("PLAYER_ENTERING_WORLD")
+
+        for _, name in ipairs(viewerNames) do
+            local viewer = _G[name]
+            local hooks = viewer._secureHooks
+                and viewer._secureHooks.OnAnyEditModeSystemAnchorChanged
+            expect(hooks and hooks[#hooks]).to_be_truthy()
+            hooks[#hooks]()
+        end
+
+        expect(_G._GetPendingTimerCount()).to_equal(4)
+        _G._RunPendingTimers()
+    end)
+
     it("only schedules buff visibility changes in dynamic mode", function()
         local buffViewer = createViewer("BuffIconCooldownViewer")
         local child = CreateFrame("Frame", nil, buffViewer)

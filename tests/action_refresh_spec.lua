@@ -19,6 +19,23 @@ describe("Action bar refresh events", function()
         expect(eventFrame._events.PLAYER_EQUIPMENT_CHANGED).to_equal(true)
     end)
 
+    it("registers display geometry changes", function()
+        local eventFrame = getEventFrame()
+
+        expect(eventFrame._events.UI_SCALE_CHANGED).to_equal(true)
+        expect(eventFrame._events.DISPLAY_SIZE_CHANGED).to_equal(true)
+    end)
+
+    it("coalesces display changes into one relayout per cooldown viewer", function()
+        local eventFrame = getEventFrame()
+
+        eventFrame._scripts.OnEvent(eventFrame, "UI_SCALE_CHANGED")
+        eventFrame._scripts.OnEvent(eventFrame, "DISPLAY_SIZE_CHANGED")
+
+        expect(_G._GetPendingTimerCount()).to_equal(4)
+        _G._RunPendingTimers()
+    end)
+
     it("coalesces page changes and rebuilds the slot map next frame", function()
         local eventFrame = getEventFrame()
         local button = CreateFrame("Button", "ActionButton1")

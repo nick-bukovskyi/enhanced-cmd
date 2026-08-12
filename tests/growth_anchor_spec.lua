@@ -32,6 +32,10 @@ local function newViewer(point, left, bottom, width, height, scale, name)
         return self._scale
     end
 
+    function viewer:GetEffectiveScale()
+        return self._effectiveScale or self._scale
+    end
+
     function viewer:GetRect()
         return self._left, self._bottom, self._width, self._height
     end
@@ -147,6 +151,16 @@ describe("SetViewerSizePreservingEdge", function()
         expect(select(5, viewer:GetPoint(1))).to_equal(-40)
     end)
 
+    it("converts the edge correction through the viewer's local scale", function()
+        local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 0.8)
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        local _, bottom = viewer:GetRect()
+        expect(bottom).to_equal(100)
+        expect(select(5, viewer:GetPoint(1))).to_equal(50)
+    end)
+
     it("preserves right edge for vertical growth left", function()
         local viewer = newViewer("TOPLEFT", 20, 100, 40, 160, 1)
 
@@ -189,6 +203,72 @@ describe("SetViewerSizePreservingEdge", function()
         expect(bottom + height).to_equal(500)
     end)
 
+    it("restores the stable edge when Blizzard reapplies the source anchor", function()
+        local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        -- Blizzard reapplies the original Edit Mode point after the frame has
+        -- already grown to two rows.
+        viewer._points[1].offsetY = 0
+        viewer._bottom = 60
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        local _, bottom = viewer:GetRect()
+        expect(bottom).to_equal(100)
+        expect(select(5, viewer:GetPoint(1))).to_equal(40)
+    end)
+
+    it("adopts a genuinely new anchor as the stable edge", function()
+        local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        -- A different Edit Mode position matches neither the source anchor
+        -- nor ECDM's corrected runtime anchor.
+        viewer._points[1].offsetY = 20
+        viewer._bottom = 80
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        local _, bottom = viewer:GetRect()
+        expect(bottom).to_equal(80)
+        expect(select(5, viewer:GetPoint(1))).to_equal(20)
+    end)
+
+    it("adopts the current edge after effective scale changes", function()
+        local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
+
+        resize(viewer, 160, 80, "BOTTOM")
+        viewer._effectiveScale = 0.8
+        viewer._bottom = 120
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        local _, bottom = viewer:GetRect()
+        expect(bottom).to_equal(120)
+    end)
+
+    it("follows movement of the relative anchor frame", function()
+        local relativeFrame = {
+            _bottom = 0,
+            GetEffectiveScale = function() return 1 end,
+            GetRect = function(self) return 0, self._bottom, 300, 300 end,
+        }
+        local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
+        viewer._points[1].relativeTo = relativeFrame
+
+        resize(viewer, 160, 80, "BOTTOM")
+        relativeFrame._bottom = 50
+        viewer._bottom = 150
+
+        resize(viewer, 160, 80, "BOTTOM")
+
+        local _, bottom = viewer:GetRect()
+        expect(bottom).to_equal(150)
+    end)
+
     it("keeps cached edge across viewer replacement when anchor points match", function()
         local firstViewer = newViewer("TOP", 1334, 378, 204, 40, 1, "BuffIconCooldownViewer")
 
@@ -221,5 +301,14 @@ describe("Tracked bar stable edge", function()
 
     it("preserves the bottom edge for upward vertical growth", function()
         expect(ns._GetBarsPreserveEdge(false, false)).to_equal("BOTTOM")
+    end)
+end)
+
+describe("Cooldown grid stable edge", function()
+    it("preserves the leading edge for each growth direction", function()
+        expect(ns._GetGridPreserveEdge(false, true)).to_equal("TOP")
+        expect(ns._GetGridPreserveEdge(false, false)).to_equal("BOTTOM")
+        expect(ns._GetGridPreserveEdge(true, true)).to_equal("LEFT")
+        expect(ns._GetGridPreserveEdge(true, false)).to_equal("RIGHT")
     end)
 end)

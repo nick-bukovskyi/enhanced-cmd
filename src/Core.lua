@@ -640,6 +640,39 @@ local function GetPointsKey(points)
     return table.concat(key, ";")
 end
 
+local function GetRegionGeometryKey(region)
+    if not region then return "nil" end
+
+    local effectiveScale = region.GetEffectiveScale and region:GetEffectiveScale()
+        or (region.GetScale and region:GetScale())
+        or 1
+    local left, bottom, width, height
+    if region.GetRect then
+        left, bottom, width, height = region:GetRect()
+    end
+
+    return tostring(region) .. "|"
+        .. FormatPointNumber(effectiveScale) .. "|"
+        .. FormatPointNumber(left) .. "|"
+        .. FormatPointNumber(bottom) .. "|"
+        .. FormatPointNumber(width) .. "|"
+        .. FormatPointNumber(height)
+end
+
+local function GetStableEdgeContextKey(frame, points)
+    local key = {
+        GetRegionGeometryKey(UIParent),
+        FormatPointNumber(frame.GetEffectiveScale and frame:GetEffectiveScale()
+            or (frame.GetScale and frame:GetScale())
+            or 1),
+    }
+    local parent = frame.GetParent and frame:GetParent()
+    for _, point in ipairs(points) do
+        key[#key + 1] = GetRegionGeometryKey(point.relativeTo or parent or UIParent)
+    end
+    return table.concat(key, ";")
+end
+
 local function GetStableEdgeCacheKey(frame)
     if frame and frame.GetName then
         local name = frame:GetName()
@@ -654,15 +687,19 @@ local function GetStableEdgeCache(frame)
     return stableEdgeCache[cacheKey]
 end
 
-local function CacheStableEdge(frame, points, preserveEdge, left, bottom, right, top)
+local function CacheStableEdge(frame, points, sourcePointsKey, preserveEdge, left, bottom, right, top)
     local cache = {
+        contextKey = GetStableEdgeContextKey(frame, points),
         edge = GetEdgeValue(left, bottom, right, top, preserveEdge),
         edgeName = preserveEdge,
         pointsKey = GetPointsKey(points),
+        sourcePointsKey = sourcePointsKey,
     }
+    frame._ecdmStableContextKey = cache.contextKey
     frame._ecdmStableEdge = cache.edge
     frame._ecdmStableEdgeName = cache.edgeName
     frame._ecdmStablePointsKey = cache.pointsKey
+    frame._ecdmStableSourcePointsKey = cache.sourcePointsKey
     stableEdgeCache[GetStableEdgeCacheKey(frame)] = cache
 end
 
@@ -683,20 +720,34 @@ local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
 
     local beforeLeft, beforeBottom, beforeRight, beforeTop = GetViewerRect(frame)
     local targetEdge = GetEdgeValue(beforeLeft, beforeBottom, beforeRight, beforeTop, preserveEdge)
+    local contextKey = GetStableEdgeContextKey(frame, points)
     local stableCache = GetStableEdgeCache(frame)
     if not stableCache and frame._ecdmStableEdge then
         stableCache = {
+            contextKey = frame._ecdmStableContextKey,
             edge = frame._ecdmStableEdge,
             edgeName = frame._ecdmStableEdgeName,
             pointsKey = frame._ecdmStablePointsKey,
+            sourcePointsKey = frame._ecdmStableSourcePointsKey,
         }
     end
-    if stableCache
+    -- Blizzard can reapply the saved Edit Mode point after we offset that
+    -- point to preserve the growth edge. Both describe the same placement.
+    local stablePointsMatch = stableCache
+        and (stableCache.pointsKey == pointsKey
+            or stableCache.sourcePointsKey == pointsKey)
+    local usedStableEdge = stableCache
+        and stableCache.contextKey == contextKey
         and stableCache.edgeName == preserveEdge
-        and stableCache.pointsKey == pointsKey
-        and stableCache.edge then
+        and stablePointsMatch
+        and stableCache.edge ~= nil
+    if usedStableEdge then
         targetEdge = stableCache.edge
     end
+
+    local sourcePointsKey = usedStableEdge
+        and (stableCache.sourcePointsKey or pointsKey)
+        or pointsKey
 
     frame:SetSize(width, height)
 
@@ -711,7 +762,8 @@ local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
 
     local deltaX, deltaY = GetPreservedEdgeDelta(targetEdge, afterLeft, afterBottom, afterRight, afterTop, preserveEdge)
     if math.abs(deltaX) < 0.01 and math.abs(deltaY) < 0.01 then
-        CacheStableEdge(frame, points, preserveEdge, afterLeft, afterBottom, afterRight, afterTop)
+        CacheStableEdge(frame, points, sourcePointsKey,
+            preserveEdge, afterLeft, afterBottom, afterRight, afterTop)
         return
     end
 
@@ -739,7 +791,8 @@ local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
     frame._arSettingPos = false
 
     local finalLeft, finalBottom, finalRight, finalTop = GetViewerRect(frame)
-    CacheStableEdge(frame, adjustedPoints, preserveEdge, finalLeft, finalBottom, finalRight, finalTop)
+    CacheStableEdge(frame, adjustedPoints, sourcePointsKey,
+        preserveEdge, finalLeft, finalBottom, finalRight, finalTop)
 end
 
 -- ---------------------------------------------------------------------------
@@ -754,6 +807,13 @@ local HookBarFrame  -- forward declaration; defined after ScheduleBarsLayout
 
 local function SortByLayoutIndex(a, b)
     return (a.layoutIndex or 0) < (b.layoutIndex or 0)
+end
+
+local function GetGridPreserveEdge(isVertical, growForward)
+    if isVertical then
+        return growForward and "LEFT" or "RIGHT"
+    end
+    return growForward and "TOP" or "BOTTOM"
 end
 
 local function ApplyLayout()
@@ -788,9 +848,7 @@ local function ApplyLayout()
     local growDown = (db.growDirection == "DOWN")
     local align = db.align
     local isVertical = IsViewerVertical(viewer)
-    local preserveEdge = isVertical
-        and (growDown and "LEFT" or "RIGHT")
-        or (growDown and "TOP" or "BOTTOM")
+    local preserveEdge = GetGridPreserveEdge(isVertical, growDown)
 
     local scale = visibleBuf[1]:GetScale()
     if scale < 0.01 then scale = 1 end
@@ -1153,7 +1211,8 @@ local function ApplyAlignLayout(v, alignKey, buf, hookChildFn)
     local totalW = (refCols * (iconW + spacing) - spacing) * scale
     local totalH = (refRows * (iconH + spacing) - spacing) * scale
     if totalW > 0 and totalH > 0 then
-        v:SetSize(totalW, totalH)
+        SetViewerSizePreservingEdge(v, totalW, totalH,
+            GetGridPreserveEdge(isVertical, true))
     end
 end
 
@@ -1377,6 +1436,11 @@ local function InstallViewerHooks(state, getViewer, hookChildFn, scheduleFn, app
         -- including Blizzard's own RefreshLayout via secureexecuterange).
         if onRefreshLayout and v.RefreshLayout then
             hooksecurefunc(v, "RefreshLayout", onRefreshLayout)
+        end
+
+        -- A snapped anchor can move without changing this viewer's own point.
+        if v.OnAnyEditModeSystemAnchorChanged then
+            hooksecurefunc(v, "OnAnyEditModeSystemAnchorChanged", scheduleFn)
         end
 
         local children = { v:GetChildren() }
@@ -2042,6 +2106,8 @@ eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+eventFrame:RegisterEvent("UI_SCALE_CHANGED")
+eventFrame:RegisterEvent("DISPLAY_SIZE_CHANGED")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
@@ -2063,6 +2129,11 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         RegisterSlashCommands()
     elseif event == "PLAYER_ENTERING_WORLD" then
         TryInit()
+    elseif event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
+        ScheduleLayout()
+        ScheduleBarsLayout()
+        ScheduleEssentialLayout()
+        ScheduleUtilityLayout()
     elseif event == "UPDATE_BINDINGS"
         or event == "ACTIONBAR_SLOT_CHANGED"
         or event == "ACTIONBAR_PAGE_CHANGED"
@@ -2076,6 +2147,7 @@ end)
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
+ns._GetGridPreserveEdge = GetGridPreserveEdge
 ns._GetBarsPreserveEdge = GetBarsPreserveEdge
 ns._GetHotkeyText = GetHotkeyText
 ns._GetItemHotkeyText = GetItemHotkeyText

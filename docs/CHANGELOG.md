@@ -1,3 +1,20 @@
+## [0.15.1] - 2026-08-12
+
+&nbsp;
+
+### Fixed
+
+- Tracked Buffs no longer jump when a new row appears, combat starts, or Cooldown Manager Settings opens
+- Growth Up keeps the first row in place and adds new rows above it, while Growth Down adds new rows below it
+- Essential and Utility cooldown grids stay in place when their visible rows or columns change
+- Cooldown grids remain correctly positioned after UI scale, display size, or snapped Edit Mode anchor changes
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.15.0] - 2026-07-30
 
 &nbsp;
