@@ -78,6 +78,15 @@ local function newViewer(point, left, bottom, width, height, scale, name)
         end
     end
 
+    function viewer:SetFixedSize(widthValue, heightValue)
+        self._fixedWidth = widthValue
+        self._fixedHeight = heightValue
+    end
+
+    function viewer:GetFixedSize()
+        return self._fixedWidth, self._fixedHeight
+    end
+
     local function applyPoint(self, pointValue, offsetX, offsetY)
         offsetX = offsetX or 0
         offsetY = offsetY or 0
@@ -203,6 +212,26 @@ describe("SetViewerSizePreservingEdge", function()
         expect(bottom + height).to_equal(500)
     end)
 
+    it("pins Blizzard's resize layout to the custom grid size", function()
+        local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
+
+        resize(viewer, 160, 120, "BOTTOM")
+
+        local fixedWidth, fixedHeight = viewer:GetFixedSize()
+        expect(fixedWidth).to_equal(160)
+        expect(fixedHeight).to_equal(120)
+
+        -- ResizeLayoutMixin starts every pass at 1x1, then uses fixed size
+        -- when supplied. The synchronous native pass must end at the same
+        -- dimensions and preserved edge as Enhanced CDM's layout.
+        viewer:SetSize(1, 1)
+        viewer:SetSize(fixedWidth, fixedHeight)
+
+        local _, bottom, _, height = viewer:GetRect()
+        expect(bottom).to_equal(100)
+        expect(height).to_equal(120)
+    end)
+
     it("restores the stable edge when Blizzard reapplies the source anchor", function()
         local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
 
@@ -229,6 +258,7 @@ describe("SetViewerSizePreservingEdge", function()
         -- nor ECDM's corrected runtime anchor.
         viewer._points[1].offsetY = 20
         viewer._bottom = 80
+        ns._InvalidateStableEdge(viewer)
 
         resize(viewer, 160, 80, "BOTTOM")
 

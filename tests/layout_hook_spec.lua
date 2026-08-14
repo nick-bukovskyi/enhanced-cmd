@@ -93,6 +93,25 @@ describe("Layout hook timing", function()
         _G._RunPendingTimers()
     end)
 
+    it("tracks explicit Edit Mode position and layout changes", function()
+        local buffViewer = createViewer("BuffIconCooldownViewer")
+        local methodNames = {
+            "OnSystemPositionChange",
+            "ResetToDefaultPosition",
+            "UpdateSystem",
+        }
+
+        for _, methodName in ipairs(methodNames) do
+            local hooks = buffViewer._secureHooks
+                and buffViewer._secureHooks[methodName]
+            expect(hooks and hooks[#hooks]).to_be_truthy()
+            hooks[#hooks]()
+        end
+
+        expect(_G._GetPendingTimerCount()).to_equal(1)
+        _G._RunPendingTimers()
+    end)
+
     it("only schedules buff visibility changes in dynamic mode", function()
         local buffViewer = createViewer("BuffIconCooldownViewer")
         local child = CreateFrame("Frame", nil, buffViewer)

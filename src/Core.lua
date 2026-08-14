@@ -687,6 +687,15 @@ local function GetStableEdgeCache(frame)
     return stableEdgeCache[cacheKey]
 end
 
+local function InvalidateStableEdge(frame)
+    stableEdgeCache[GetStableEdgeCacheKey(frame)] = nil
+    frame._ecdmStableContextKey = nil
+    frame._ecdmStableEdge = nil
+    frame._ecdmStableEdgeName = nil
+    frame._ecdmStablePointsKey = nil
+    frame._ecdmStableSourcePointsKey = nil
+end
+
 local function CacheStableEdge(frame, points, sourcePointsKey, preserveEdge, left, bottom, right, top)
     local cache = {
         contextKey = GetStableEdgeContextKey(frame, points),
@@ -704,6 +713,13 @@ local function CacheStableEdge(frame, points, sourcePointsKey, preserveEdge, lef
 end
 
 local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
+    -- Cooldown viewers inherit Blizzard's ResizeLayoutMixin. Pin its output to
+    -- our grid dimensions so native Layout() passes cannot resize the same
+    -- frame back to Blizzard's one-row/one-column layout before our post-hook.
+    if frame.SetFixedSize then
+        frame:SetFixedSize(width, height)
+    end
+
     local points = {}
     local numPoints = frame.GetNumPoints and frame:GetNumPoints() or 0
     for i = 1, numPoints do
@@ -1443,6 +1459,20 @@ local function InstallViewerHooks(state, getViewer, hookChildFn, scheduleFn, app
             hooksecurefunc(v, "OnAnyEditModeSystemAnchorChanged", scheduleFn)
         end
 
+        local function OnExplicitPositionChange()
+            InvalidateStableEdge(v)
+            scheduleFn()
+        end
+        if v.OnSystemPositionChange then
+            hooksecurefunc(v, "OnSystemPositionChange", OnExplicitPositionChange)
+        end
+        if v.ResetToDefaultPosition then
+            hooksecurefunc(v, "ResetToDefaultPosition", OnExplicitPositionChange)
+        end
+        if v.UpdateSystem then
+            hooksecurefunc(v, "UpdateSystem", OnExplicitPositionChange)
+        end
+
         local children = { v:GetChildren() }
         for _, child in ipairs(children) do
             hookChildFn(child)
@@ -2147,6 +2177,7 @@ end)
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
+ns._InvalidateStableEdge = InvalidateStableEdge
 ns._GetGridPreserveEdge = GetGridPreserveEdge
 ns._GetBarsPreserveEdge = GetBarsPreserveEdge
 ns._GetHotkeyText = GetHotkeyText

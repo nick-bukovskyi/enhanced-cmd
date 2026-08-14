@@ -1,3 +1,19 @@
+## [0.15.2] - 2026-08-13
+
+&nbsp;
+
+### Fixed
+
+- Cooldown grids retain their custom dimensions during Blizzard layout refreshes, preventing occasional position drift in combat or when opening Cooldown Manager Settings
+- Tracked Buffs remain anchored at every row count through repeated aura and visibility updates
+- Moving, resetting, or switching a cooldown viewer in Edit Mode establishes the correct new growth anchor
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.15.1] - 2026-08-12
 
 &nbsp;
