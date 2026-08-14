@@ -40,6 +40,10 @@ local function newViewer(point, left, bottom, width, height, scale, name)
         return self._left, self._bottom, self._width, self._height
     end
 
+    function viewer:GetSize()
+        return self._width, self._height
+    end
+
     function viewer:GetNumPoints()
         return #self._points
     end
@@ -78,13 +82,8 @@ local function newViewer(point, left, bottom, width, height, scale, name)
         end
     end
 
-    function viewer:SetFixedSize(widthValue, heightValue)
-        self._fixedWidth = widthValue
-        self._fixedHeight = heightValue
-    end
-
-    function viewer:GetFixedSize()
-        return self._fixedWidth, self._fixedHeight
+    function viewer:SetFixedSize()
+        error("Blizzard fixed-size fields must remain untouched")
     end
 
     local function applyPoint(self, pointValue, offsetX, offsetY)
@@ -212,20 +211,16 @@ describe("SetViewerSizePreservingEdge", function()
         expect(bottom + height).to_equal(500)
     end)
 
-    it("pins Blizzard's resize layout to the custom grid size", function()
+    it("restores the custom grid size after Blizzard resizes the viewer", function()
         local viewer = newViewer("TOPLEFT", 20, 100, 160, 40, 1)
 
         resize(viewer, 160, 120, "BOTTOM")
 
-        local fixedWidth, fixedHeight = viewer:GetFixedSize()
-        expect(fixedWidth).to_equal(160)
-        expect(fixedHeight).to_equal(120)
-
-        -- ResizeLayoutMixin starts every pass at 1x1, then uses fixed size
-        -- when supplied. The synchronous native pass must end at the same
-        -- dimensions and preserved edge as Enhanced CDM's layout.
+        -- ResizeLayoutMixin starts every pass at 1x1. The SetSize post-hook
+        -- restores Enhanced CDM's private target without writing Blizzard's
+        -- fixedWidth/fixedHeight fields, which are read in secure execution.
         viewer:SetSize(1, 1)
-        viewer:SetSize(fixedWidth, fixedHeight)
+        ns._EnforceViewerSize(viewer)
 
         local _, bottom, _, height = viewer:GetRect()
         expect(bottom).to_equal(100)

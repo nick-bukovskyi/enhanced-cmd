@@ -584,6 +584,39 @@ local function CalcGridPosition(index, maxPerRow, iconW, iconH, spacing, align, 
 end
 
 local stableEdgeCache = {}
+local viewerSizeTargets = setmetatable({}, { __mode = "k" })
+local settingViewerSize = setmetatable({}, { __mode = "k" })
+
+local function SetViewerSize(frame, width, height)
+    local target = viewerSizeTargets[frame]
+    if not target then
+        target = {}
+        viewerSizeTargets[frame] = target
+    end
+    target.width = width
+    target.height = height
+
+    settingViewerSize[frame] = true
+    frame:SetSize(width, height)
+    settingViewerSize[frame] = nil
+end
+
+local function EnforceViewerSize(frame)
+    if settingViewerSize[frame] then return end
+
+    local target = viewerSizeTargets[frame]
+    if not target then return end
+
+    local width, height = frame:GetSize()
+    if math.abs(width - target.width) < 0.01
+        and math.abs(height - target.height) < 0.01 then
+        return
+    end
+
+    settingViewerSize[frame] = true
+    frame:SetSize(target.width, target.height)
+    settingViewerSize[frame] = nil
+end
 
 local function FormatPointNumber(value)
     if type(value) ~= "number" then return tostring(value) end
@@ -713,13 +746,6 @@ local function CacheStableEdge(frame, points, sourcePointsKey, preserveEdge, lef
 end
 
 local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
-    -- Cooldown viewers inherit Blizzard's ResizeLayoutMixin. Pin its output to
-    -- our grid dimensions so native Layout() passes cannot resize the same
-    -- frame back to Blizzard's one-row/one-column layout before our post-hook.
-    if frame.SetFixedSize then
-        frame:SetFixedSize(width, height)
-    end
-
     local points = {}
     local numPoints = frame.GetNumPoints and frame:GetNumPoints() or 0
     for i = 1, numPoints do
@@ -765,7 +791,7 @@ local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
         and (stableCache.sourcePointsKey or pointsKey)
         or pointsKey
 
-    frame:SetSize(width, height)
+    SetViewerSize(frame, width, height)
 
     if not beforeLeft or #points == 0 then
         return
@@ -1439,6 +1465,7 @@ local function InstallViewerHooks(state, getViewer, hookChildFn, scheduleFn, app
         InstallMixinHooks()
 
         local v = getViewer()
+        hooksecurefunc(v, "SetSize", EnforceViewerSize)
         hooksecurefunc(v, "Layout", function()
             if onLayout then
                 onLayout()
@@ -2177,6 +2204,7 @@ end)
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
+ns._EnforceViewerSize = EnforceViewerSize
 ns._InvalidateStableEdge = InvalidateStableEdge
 ns._GetGridPreserveEdge = GetGridPreserveEdge
 ns._GetBarsPreserveEdge = GetBarsPreserveEdge

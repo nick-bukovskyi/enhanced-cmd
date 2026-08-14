@@ -37,8 +37,6 @@ function FrameMixin:GetObjectType() return self._type or "Frame" end
 function FrameMixin:GetStatusBarTexture() return self._statusBarTexture end
 function FrameMixin:GetFrameLevel() return self._frameLevel or 0 end
 function FrameMixin:SetSize(w, h) self._width = w; self._height = h end
-function FrameMixin:SetFixedSize(w, h) self._fixedWidth = w; self._fixedHeight = h end
-function FrameMixin:GetFixedSize() return self._fixedWidth, self._fixedHeight end
 function FrameMixin:GetWidth() return self._width or 0 end
 function FrameMixin:GetHeight() return self._height or 0 end
 function FrameMixin:GetSize() return self._width or 0, self._height or 0 end

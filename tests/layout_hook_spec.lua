@@ -27,6 +27,8 @@ describe("Layout hook timing", function()
 
         local hooks = buffViewer._secureHooks and buffViewer._secureHooks.Layout
         expect(hooks and hooks[#hooks]).to_be_truthy()
+        local sizeHooks = buffViewer._secureHooks and buffViewer._secureHooks.SetSize
+        expect(sizeHooks and sizeHooks[#sizeHooks]).to_be_truthy()
 
         local timerCount = 0
         local oldNewTimer = C_Timer.NewTimer

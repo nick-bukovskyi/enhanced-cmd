@@ -1,3 +1,18 @@
+## [0.15.3] - 2026-08-13
+
+&nbsp;
+
+### Fixed
+
+- Fixed Lua taint warnings and secret aura errors introduced in 0.15.2 during combat, target changes, and Edit Mode
+- Cooldown grids now resist Blizzard size resets without modifying Blizzard's secure layout state
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.15.2] - 2026-08-13
 
 &nbsp;
