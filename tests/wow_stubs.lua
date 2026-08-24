@@ -47,6 +47,7 @@ function FrameMixin:ClearAllPoints() end
 function FrameMixin:SetAllPoints() end
 function FrameMixin:Show() self._shown = true end
 function FrameMixin:Hide() self._shown = false end
+function FrameMixin:SetShown(shown) self._shown = shown end
 function FrameMixin:IsShown() return self._shown ~= false end
 function FrameMixin:IsVisible() return self:IsShown() end
 function FrameMixin:EnableMouse() end

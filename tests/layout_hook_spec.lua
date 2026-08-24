@@ -146,14 +146,16 @@ describe("Layout hook timing", function()
         acquireHooks[#acquireHooks](buffViewer, child)
         _G._RunPendingTimers()
 
-        local visibilityHooks = child._hookScripts.OnShow
+        local visibilityHooks = child._secureHooks.SetShown
+        expect(child._hookScripts and child._hookScripts.OnShow).to_be_nil()
+        expect(child._hookScripts and child._hookScripts.OnHide).to_be_nil()
         local oldLayout = ns.db.layout
         ns.db.layout = "STATIC"
-        visibilityHooks[1](child)
+        visibilityHooks[#visibilityHooks](child)
         expect(_G._GetPendingTimerCount()).to_equal(0)
 
         ns.db.layout = "DYNAMIC"
-        visibilityHooks[1](child)
+        visibilityHooks[#visibilityHooks](child)
         expect(_G._GetPendingTimerCount()).to_equal(1)
         _G._RunPendingTimers()
         ns.db.layout = oldLayout
@@ -167,14 +169,16 @@ describe("Layout hook timing", function()
         acquireHooks[#acquireHooks](barViewer, child)
         _G._RunPendingTimers()
 
-        local visibilityHooks = child._hookScripts.OnHide
+        local visibilityHooks = child._secureHooks.SetShown
+        expect(child._hookScripts and child._hookScripts.OnShow).to_be_nil()
+        expect(child._hookScripts and child._hookScripts.OnHide).to_be_nil()
         local oldLayout = ns.db.bars_layout
         ns.db.bars_layout = "STATIC"
-        visibilityHooks[1](child)
+        visibilityHooks[#visibilityHooks](child)
         expect(_G._GetPendingTimerCount()).to_equal(0)
 
         ns.db.bars_layout = "DYNAMIC"
-        visibilityHooks[1](child)
+        visibilityHooks[#visibilityHooks](child)
         expect(_G._GetPendingTimerCount()).to_equal(1)
         _G._RunPendingTimers()
         ns.db.bars_layout = oldLayout

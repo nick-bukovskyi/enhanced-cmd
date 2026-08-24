@@ -1,3 +1,18 @@
+## [0.15.5] - 2026-08-24
+
+&nbsp;
+
+### Fixed
+
+- Fixed Enhanced CDM tainting Blizzard's secure aura processing when tracked buff or bar visibility changed
+- Fixed resulting secret-value errors in `TableUtil.tContains` and forbidden-table errors in `CheckAuraAddedAlertTriggers` during combat
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.15.4] - 2026-08-23
 
 &nbsp;

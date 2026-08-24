@@ -1007,15 +1007,11 @@ local function HookViewerChild(frame, hookedSet, getViewer, getGrowDown, schedul
         self._arSettingPos = false
     end)
 
-    -- Show/hide changes visible count in dynamic mode — relayout needed
-    -- Use HookScript (fires on any visibility change) not hooksecurefunc
-    -- (only fires on explicit Lua Show/Hide calls)
-    frame:HookScript("OnShow", function(self)
-        if self:GetParent() ~= getViewer() then return end
-        if shouldScheduleVisibility and not shouldScheduleVisibility() then return end
-        scheduleFn()
-    end)
-    frame:HookScript("OnHide", function(self)
+    -- CDM calls SetShown while processing UNIT_AURA. The item templates have
+    -- no native OnShow/OnHide handlers, so HookScript would create tainted
+    -- handlers inside Blizzard's secure aura loop. A secure method post-hook
+    -- observes the same visibility updates without contaminating that loop.
+    hooksecurefunc(frame, "SetShown", function(self)
         if self:GetParent() ~= getViewer() then return end
         if shouldScheduleVisibility and not shouldScheduleVisibility() then return end
         scheduleFn()
