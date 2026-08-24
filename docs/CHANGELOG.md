@@ -1,3 +1,18 @@
+## [0.15.4] - 2026-08-23
+
+&nbsp;
+
+### Fixed
+
+- Tracked Buffs and the other cooldown grids now rebuild their anchor positions after Blizzard loads the active character's Edit Mode layout
+- Cooldown grids no longer remain shifted after logging in or switching characters until Edit Mode is opened
+
+&nbsp;
+
+---
+
+&nbsp;
+
 ## [0.15.3] - 2026-08-13
 
 &nbsp;

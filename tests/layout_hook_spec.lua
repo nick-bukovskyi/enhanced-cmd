@@ -114,6 +114,30 @@ describe("Layout hook timing", function()
         _G._RunPendingTimers()
     end)
 
+    it("rebuilds viewer edges after character Edit Mode layouts load", function()
+        local viewerNames = {
+            "BuffIconCooldownViewer",
+            "BuffBarCooldownViewer",
+            "EssentialCooldownViewer",
+            "UtilityCooldownViewer",
+        }
+        for _, name in ipairs(viewerNames) do
+            local currentViewer = createViewer(name)
+            currentViewer._ecdmStableEdge = 100
+            currentViewer._ecdmStableEdgeName = "TOP"
+        end
+        fireEvent("PLAYER_ENTERING_WORLD")
+
+        fireEvent("EDIT_MODE_LAYOUTS_UPDATED")
+
+        for _, name in ipairs(viewerNames) do
+            expect(_G[name]._ecdmStableEdge).to_be_nil()
+            expect(_G[name]._ecdmStableEdgeName).to_be_nil()
+        end
+        expect(_G._GetPendingTimerCount()).to_equal(4)
+        _G._RunPendingTimers()
+    end)
+
     it("only schedules buff visibility changes in dynamic mode", function()
         local buffViewer = createViewer("BuffIconCooldownViewer")
         local child = CreateFrame("Frame", nil, buffViewer)

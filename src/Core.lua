@@ -1273,10 +1273,26 @@ end
 local ScheduleEssentialLayout = CreateNextFrameScheduler(ApplyEssentialLayout)
 local ScheduleUtilityLayout = CreateNextFrameScheduler(ApplyUtilityLayout)
 
+local function ScheduleAllLayouts()
+    ScheduleLayout()
+    ScheduleBarsLayout()
+    ScheduleEssentialLayout()
+    ScheduleUtilityLayout()
+end
+
+local function RefreshLayoutsAfterEditModeUpdate()
+    if viewer then InvalidateStableEdge(viewer) end
+    if barViewer then InvalidateStableEdge(barViewer) end
+    if essentialViewer then InvalidateStableEdge(essentialViewer) end
+    if utilityViewer then InvalidateStableEdge(utilityViewer) end
+    ScheduleAllLayouts()
+end
+
 ns.ApplyEssentialLayout = ApplyEssentialLayout
 ns.ApplyUtilityLayout = ApplyUtilityLayout
 ns.ScheduleEssentialLayout = ScheduleEssentialLayout
 ns.ScheduleUtilityLayout = ScheduleUtilityLayout
+ns.ScheduleAllLayouts = ScheduleAllLayouts
 
 HookEssentialFrame = function(frame)
     HookViewerChild(frame, essentialHookedFrames,
@@ -2152,7 +2168,7 @@ local function RegisterSlashCommands()
 end
 
 -- ---------------------------------------------------------------------------
--- Events — ADDON_LOADED (init DB), PLAYER_ENTERING_WORLD (find viewer)
+-- Events — database, viewer initialization, and external layout refreshes
 -- ---------------------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
@@ -2165,6 +2181,7 @@ eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("UI_SCALE_CHANGED")
 eventFrame:RegisterEvent("DISPLAY_SIZE_CHANGED")
+eventFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
@@ -2186,11 +2203,11 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         RegisterSlashCommands()
     elseif event == "PLAYER_ENTERING_WORLD" then
         TryInit()
+    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+        TryInit()
+        RefreshLayoutsAfterEditModeUpdate()
     elseif event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
-        ScheduleLayout()
-        ScheduleBarsLayout()
-        ScheduleEssentialLayout()
-        ScheduleUtilityLayout()
+        ScheduleAllLayouts()
     elseif event == "UPDATE_BINDINGS"
         or event == "ACTIONBAR_SLOT_CHANGED"
         or event == "ACTIONBAR_PAGE_CHANGED"

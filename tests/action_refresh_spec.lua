@@ -26,6 +26,12 @@ describe("Action bar refresh events", function()
         expect(eventFrame._events.DISPLAY_SIZE_CHANGED).to_equal(true)
     end)
 
+    it("registers character Edit Mode layout changes", function()
+        local eventFrame = getEventFrame()
+
+        expect(eventFrame._events.EDIT_MODE_LAYOUTS_UPDATED).to_equal(true)
+    end)
+
     it("coalesces display changes into one relayout per cooldown viewer", function()
         local eventFrame = getEventFrame()
 

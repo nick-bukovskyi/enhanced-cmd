@@ -1521,10 +1521,7 @@ local function SetupEditMode()
         -- Hide panels on Edit Mode exit and refresh layouts to clear stale positions
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
             HideAllPanels()
-            if ns.ScheduleLayout then ns.ScheduleLayout() end
-            if ns.ScheduleBarsLayout then ns.ScheduleBarsLayout() end
-            if ns.ScheduleEssentialLayout then ns.ScheduleEssentialLayout() end
-            if ns.ScheduleUtilityLayout then ns.ScheduleUtilityLayout() end
+            if ns.ScheduleAllLayouts then ns.ScheduleAllLayouts() end
         end)
 
         -- Install dialog hooks if the settings dialog already exists.
