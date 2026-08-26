@@ -32,6 +32,10 @@ local function newViewer(point, left, bottom, width, height, scale, name)
         return self._scale
     end
 
+    function viewer:GetSize()
+        return self._width, self._height
+    end
+
     function viewer:GetEffectiveScale()
         return self._effectiveScale or self._scale
     end
@@ -295,7 +299,7 @@ describe("SetViewerSizePreservingEdge", function()
     end)
 
     it("keeps cached edge across viewer replacement when anchor points match", function()
-        local firstViewer = newViewer("TOP", 1334, 378, 204, 40, 1, "BuffIconCooldownViewer")
+        local firstViewer = newViewer("TOP", 1334, 378, 204, 40, 1, "ReplacementTestViewer")
 
         resize(firstViewer, 204, 40, "BOTTOM")
 
@@ -306,7 +310,7 @@ describe("SetViewerSizePreservingEdge", function()
         resize(firstViewer, 204, 81, "BOTTOM")
 
         local _, _, _, _, stableOffsetY = firstViewer:GetPoint(1)
-        local replacementViewer = newViewer("TOP", 1334, 419, 204, 40, 1, "BuffIconCooldownViewer")
+        local replacementViewer = newViewer("TOP", 1334, 419, 204, 40, 1, "ReplacementTestViewer")
         replacementViewer._points[1].offsetY = stableOffsetY
         replacementViewer._originTop = 420
 
@@ -315,6 +319,37 @@ describe("SetViewerSizePreservingEdge", function()
         local _, bottom, _, height = replacementViewer:GetRect()
         expect(bottom).to_equal(378)
         expect(bottom + height).to_equal(418)
+    end)
+end)
+
+describe("Tracked buff startup edge bootstrap", function()
+    local resize = ns._ApplyViewerSize
+
+    it("keeps the saved top anchor until the complete grid establishes its bottom edge", function()
+        local viewer = newViewer("TOPLEFT", 1305, 447, 224, 44, 1)
+
+        resize(viewer, 269, 44, "BOTTOM", false)
+        expect(select(2, viewer:GetRect())).to_equal(447)
+        expect(select(5, viewer:GetPoint(1))).to_equal(0)
+        expect(viewer._ecdmStableEdge).to_be_nil()
+
+        resize(viewer, 269, 89, "BOTTOM", false)
+        expect(select(2, viewer:GetRect())).to_equal(402)
+        expect(select(5, viewer:GetPoint(1))).to_equal(0)
+        expect(viewer._ecdmStableEdge).to_be_nil()
+
+        resize(viewer, 269, 134, "BOTTOM", false)
+        expect(select(2, viewer:GetRect())).to_equal(357)
+        expect(select(5, viewer:GetPoint(1))).to_equal(0)
+        expect(viewer._ecdmStableEdge).to_be_nil()
+
+        resize(viewer, 269, 134, "BOTTOM", true)
+        expect(viewer._ecdmStableEdge).to_equal(357)
+        expect(select(5, viewer:GetPoint(1))).to_equal(0)
+
+        resize(viewer, 269, 89, "BOTTOM", true)
+        expect(select(2, viewer:GetRect())).to_equal(357)
+        expect(select(5, viewer:GetPoint(1))).to_equal(-45)
     end)
 end)
 

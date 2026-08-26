@@ -586,6 +586,9 @@ end
 local stableEdgeCache = {}
 local viewerSizeTargets = setmetatable({}, { __mode = "k" })
 local settingViewerSize = setmetatable({}, { __mode = "k" })
+local stableEdgeReady = setmetatable({}, { __mode = "k" })
+local stableEdgeBootstrapTimer
+local ScheduleStableEdgeBootstrap
 
 local function SetViewerSize(frame, width, height)
     local target = viewerSizeTargets[frame]
@@ -837,6 +840,28 @@ local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
         preserveEdge, finalLeft, finalBottom, finalRight, finalTop)
 end
 
+local function ApplyViewerSize(frame, width, height, preserveEdge, preserveStableEdge)
+    if preserveStableEdge then
+        SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
+    else
+        SetViewerSize(frame, width, height)
+    end
+end
+
+local function IsCooldownViewerLayoutManagerLoaded()
+    local settings = _G["CooldownViewerSettings"]
+    if not settings or not settings.GetLayoutManager then return false end
+
+    local manager = settings:GetLayoutManager()
+    return manager and manager.IsLoaded and manager:IsLoaded() or false
+end
+
+local function IsStableEdgeReady(frame)
+    return stableEdgeReady[frame]
+        or GetStableEdgeCache(frame) ~= nil
+        or frame._ecdmStableEdge ~= nil
+end
+
 -- ---------------------------------------------------------------------------
 -- Layout — positions visible icons in a multi-row grid and sizes the viewer
 -- ---------------------------------------------------------------------------
@@ -954,7 +979,16 @@ local function ApplyLayout()
     local totalW = (refCols * (iconW + spacing) - spacing) * scale
     local totalH = (refRows * (iconH + spacing) - spacing) * scale
     if totalW > 0 and totalH > 0 then
-        SetViewerSizePreservingEdge(viewer, totalW, totalH, preserveEdge)
+        -- The viewer appears before Blizzard finishes loading the character's
+        -- cooldown layout. Keep its saved Edit Mode point untouched while the
+        -- temporary icon list fills in, then establish the growth edge once.
+        local preserveStableEdge = IsStableEdgeReady(viewer)
+        ApplyViewerSize(viewer, totalW, totalH, preserveEdge, preserveStableEdge)
+        if not preserveStableEdge then
+            if IsCooldownViewerLayoutManagerLoaded() and ScheduleStableEdgeBootstrap then
+                ScheduleStableEdgeBootstrap(viewer)
+            end
+        end
     end
 end
 
@@ -963,6 +997,25 @@ end
 -- ---------------------------------------------------------------------------
 
 local ScheduleLayout, CancelScheduledLayout = CreateNextFrameScheduler(ApplyLayout)
+
+ScheduleStableEdgeBootstrap = function(frame)
+    -- Layout manager initialization can issue several RefreshLayout calls in
+    -- one frame. Only the final grid is allowed to establish the stable edge.
+    if stableEdgeBootstrapTimer then
+        stableEdgeBootstrapTimer:Cancel()
+        stableEdgeBootstrapTimer = nil
+    end
+
+    stableEdgeBootstrapTimer = C_Timer.NewTimer(0, function()
+        stableEdgeBootstrapTimer = nil
+        if frame ~= viewer then return end
+        if not IsCooldownViewerLayoutManagerLoaded() then return end
+
+        InvalidateStableEdge(frame)
+        stableEdgeReady[frame] = true
+        ApplyLayout()
+    end)
+end
 
 local function ApplyLayoutFromViewerLayout()
     CancelScheduledLayout()
@@ -2170,6 +2223,7 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
@@ -2199,6 +2253,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         RegisterSlashCommands()
     elseif event == "PLAYER_ENTERING_WORLD" then
         TryInit()
+    elseif event == "COOLDOWN_VIEWER_DATA_LOADED" then
+        TryInit()
+        ScheduleAllLayouts()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         TryInit()
         RefreshLayoutsAfterEditModeUpdate()
@@ -2217,8 +2274,11 @@ end)
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
+ns._ApplyViewerSize = ApplyViewerSize
 ns._EnforceViewerSize = EnforceViewerSize
 ns._InvalidateStableEdge = InvalidateStableEdge
+ns._IsCooldownViewerLayoutManagerLoaded = IsCooldownViewerLayoutManagerLoaded
+ns._IsStableEdgeReady = IsStableEdgeReady
 ns._GetGridPreserveEdge = GetGridPreserveEdge
 ns._GetBarsPreserveEdge = GetBarsPreserveEdge
 ns._GetHotkeyText = GetHotkeyText

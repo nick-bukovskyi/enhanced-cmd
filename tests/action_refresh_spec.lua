@@ -32,6 +32,12 @@ describe("Action bar refresh events", function()
         expect(eventFrame._events.EDIT_MODE_LAYOUTS_UPDATED).to_equal(true)
     end)
 
+    it("registers cooldown viewer data loading", function()
+        local eventFrame = getEventFrame()
+
+        expect(eventFrame._events.COOLDOWN_VIEWER_DATA_LOADED).to_equal(true)
+    end)
+
     it("coalesces display changes into one relayout per cooldown viewer", function()
         local eventFrame = getEventFrame()
 
