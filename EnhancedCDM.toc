@@ -1,5 +1,6 @@
 ## Interface: 120000, 120001, 120007, 120100
 ## Title: Enhanced CDM
+## IconTexture: Interface\AddOns\EnhancedCDM\public\logo.tga
 ## Notes: Enhances the Cooldown Manager with multi-row icon grids, bar layouts, keybind overlays, stack text customization, and per-bar color gradients
 ## Author: Sonterix
 ## Version: 0.15.6
@@ -7,5 +8,7 @@
 ## X-Curse-Project-ID: 1479749
 
 src\Config.lua
+src\Settings.lua
+src\Lifecycle.lua
 src\Core.lua
 src\EditMode.lua

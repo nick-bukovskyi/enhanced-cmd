@@ -104,17 +104,6 @@ Replace `essential` with `utility` for Utility cooldown commands.
 
 **Position values:** `topleft`, `top`, `topright`, `right`, `bottomright`, `bottom`, `bottomleft`, `left`, `center`
 
-## Requirements
-
-- World of Warcraft: Midnight (Interface 120000+)
-- Cooldown Manager must be enabled in game settings
-
-## Installation
-
-1. Download and extract into your `World of Warcraft/_retail_/Interface/AddOns/` folder
-2. The folder structure should be `AddOns/EnhancedCDM/EnhancedCDM.toc`
-3. Enable "Enhanced CDM" in the character select addon list
-
 ## License
 
 [MIT](LICENSE)
