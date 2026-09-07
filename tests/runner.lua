@@ -120,6 +120,7 @@ local function createAddonEnvironment(saved)
   }
   environment._G = environment
   loadInEnvironment("tests/wow_stubs.lua", environment)()
+  loadInEnvironment("tests/frame_geometry.lua", environment)()
   environment.EnhancedCDMDB = saved
   local ns = {}
   for _, path in ipairs(addonFiles) do

@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.15.7] - 2026-09-07
 
 ### Added
 
@@ -6,10 +6,16 @@
 
 ### Fixed
 
+- Tracked Buffs keep their starting row or column fixed as tracked auras are added, removed, or refreshed, including after login and reload
+- The Tracked Buffs Edit Mode outline follows Growth and returns to one row or column when the tracker is empty
 - Invalid saved settings now recover without resetting valid choices or bar colors
 - Viewer enhancements now recover when cooldown viewers load late or are recreated
 - Click feedback now clears when actions change, icons are reused, or feedback is disabled
 - Bar color options now appear in the original context menu without reopening it
+
+### Changed
+
+- Tracked Buffs positions now refer to the starting row or column; existing multi-row or multi-column layouts may need to be repositioned once in Edit Mode
 
 ---
 

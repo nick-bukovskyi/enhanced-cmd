@@ -19,28 +19,6 @@ local function createViewer(name)
 end
 
 describe("Layout hook timing", function()
-  it("only reports cooldown settings ready after the layout manager loads", function()
-    local previousSettings = _G.CooldownViewerSettings
-    local loaded = false
-    _G.CooldownViewerSettings = {
-      GetLayoutManager = function()
-        return {
-          IsLoaded = function()
-            return loaded
-          end,
-        }
-      end,
-    }
-
-    local beforeLoad = ns._IsCooldownViewerLayoutManagerLoaded()
-    loaded = true
-    local afterLoad = ns._IsCooldownViewerLayoutManagerLoaded()
-    _G.CooldownViewerSettings = previousSettings
-
-    expect(beforeLoad).to_equal(false)
-    expect(afterLoad).to_equal(true)
-  end)
-
   it("applies tracked buff layout synchronously after Blizzard Layout", function()
     local buffViewer = createViewer("BuffIconCooldownViewer")
     createViewer("BuffBarCooldownViewer")
@@ -70,30 +48,25 @@ describe("Layout hook timing", function()
     expect(timerCount).to_equal(0)
   end)
 
-  it("coalesces loaded cooldown refreshes before enabling the stable edge", function()
+  it("lays out the starting row without a layout-manager readiness timer", function()
     local buffViewer = createViewer("BuffIconCooldownViewer")
     local child = CreateFrame("Frame", nil, buffViewer)
     child.cooldownID = 1
     child.layoutIndex = 1
+    child:SetSize(40, 40)
     local hooks = buffViewer._secureHooks and buffViewer._secureHooks.Layout
     local previousSettings = _G.CooldownViewerSettings
     _G.CooldownViewerSettings = {
       GetLayoutManager = function()
-        return {
-          IsLoaded = function()
-            return true
-          end,
-        }
+        error("buff positioning must not depend on layout-manager timing")
       end,
     }
 
     hooks[#hooks]()
     hooks[#hooks]()
 
-    expect(_G._GetPendingTimerCount()).to_equal(1)
-    expect(ns._IsStableEdgeReady(buffViewer)).to_equal(false)
-    _G._RunPendingTimers()
-    expect(ns._IsStableEdgeReady(buffViewer)).to_equal(true)
+    expect(_G._GetPendingTimerCount()).to_equal(0)
+    expect(buffViewer:GetHeight()).to_equal(40)
     _G.CooldownViewerSettings = previousSettings
   end)
 

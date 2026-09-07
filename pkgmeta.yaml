@@ -8,4 +8,5 @@ ignore:
   - docs
   - tests
   - README.md
+  - pkgmeta.yaml
   - public/logo.png

@@ -131,6 +131,11 @@ function FrameMixin:OnAnyEditModeSystemAnchorChanged() end
 function FrameMixin:OnSystemPositionChange() end
 function FrameMixin:ResetToDefaultPosition() end
 function FrameMixin:UpdateSystem() end
+function FrameMixin:UpdateClampOffsets() end
+function FrameMixin:SetClampRectInsets(left, right, top, bottom)
+  assert(type(left) == "number" and type(right) == "number" and type(top) == "number" and type(bottom) == "number")
+  self._clampInsets = { left, right, top, bottom }
+end
 function FrameMixin:SetText(text)
   self._text = text
 end

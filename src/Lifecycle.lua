@@ -96,6 +96,10 @@ local function InstallViewer(definition, frame)
     end
   end
   local sized = Lifecycle.HookMethod(frame, "SetSize", WhileCurrent(enforceSize))
+  local clamped = true
+  if definition.onClamp then
+    clamped = Lifecycle.HookMethod(frame, "UpdateClampOffsets", WhileCurrent(definition.onClamp))
+  end
   local laidOut = Lifecycle.HookMethod(frame, "Layout", WhileCurrent(definition.onLayout or definition.schedule))
   Lifecycle.HookMethod(frame, "RefreshLayout", WhileCurrent(definition.onRefreshLayout))
   Lifecycle.HookMethod(frame, "OnAnyEditModeSystemAnchorChanged", WhileCurrent(definition.schedule))
@@ -106,7 +110,7 @@ local function InstallViewer(definition, frame)
   for _, method in ipairs({ "OnSystemPositionChange", "ResetToDefaultPosition", "UpdateSystem" }) do
     Lifecycle.HookMethod(frame, method, WhileCurrent(PositionChanged))
   end
-  if not sized or not laidOut then
+  if not sized or not laidOut or not clamped then
     return false
   end
   if not initialized[frame] then

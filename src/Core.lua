@@ -645,9 +645,6 @@ end
 local stableEdgeCache = {}
 local viewerSizeTargets = setmetatable({}, { __mode = "k" })
 local settingViewerSize = setmetatable({}, { __mode = "k" })
-local stableEdgeReady = setmetatable({}, { __mode = "k" })
-local stableEdgeBootstrapTimer
-local ScheduleStableEdgeBootstrap
 
 local function SetViewerSize(frame, width, height)
   local target = viewerSizeTargets[frame]
@@ -915,28 +912,6 @@ local function SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
   CacheStableEdge(frame, adjustedPoints, sourcePointsKey, preserveEdge, finalLeft, finalBottom, finalRight, finalTop)
 end
 
-local function ApplyViewerSize(frame, width, height, preserveEdge, preserveStableEdge)
-  if preserveStableEdge then
-    SetViewerSizePreservingEdge(frame, width, height, preserveEdge)
-  else
-    SetViewerSize(frame, width, height)
-  end
-end
-
-local function IsCooldownViewerLayoutManagerLoaded()
-  local settings = _G["CooldownViewerSettings"]
-  if not settings or not settings.GetLayoutManager then
-    return false
-  end
-
-  local manager = settings:GetLayoutManager()
-  return manager and manager.IsLoaded and manager:IsLoaded() or false
-end
-
-local function IsStableEdgeReady(frame)
-  return stableEdgeReady[frame] or GetStableEdgeCache(frame) ~= nil or frame._ecdmStableEdge ~= nil
-end
-
 -- ---------------------------------------------------------------------------
 -- Layout - positions visible icons in a multi-row grid and sizes the viewer
 -- ---------------------------------------------------------------------------
@@ -958,6 +933,28 @@ local function GetGridPreserveEdge(isVertical, growForward)
   return growForward and "TOP" or "BOTTOM"
 end
 
+-- The saved Edit Mode frame represents only the starting row/column
+-- Its selection still covers the configured grid, including inactive slots
+local function ClampBuffStartingFootprint(frame)
+  -- Clamping the expanded outline would move the starting row at screen edges
+  frame:SetClampRectInsets(0, 0, 0, 0)
+end
+
+local function SetBuffSelectionBounds(frame, extraWidth, extraHeight, isVertical, growForward)
+  local selection = frame.Selection
+  if not selection then
+    return
+  end
+  local left = isVertical and not growForward and -extraWidth or 0
+  local right = isVertical and growForward and extraWidth or 0
+  local top = not isVertical and not growForward and extraHeight or 0
+  local bottom = not isVertical and growForward and -extraHeight or 0
+  selection:ClearAllPoints()
+  selection:SetPoint("TOPLEFT", frame, "TOPLEFT", left, top)
+  selection:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right, bottom)
+  ClampBuffStartingFootprint(frame)
+end
+
 local function ApplyLayout()
   if not ns.viewer then
     return
@@ -971,19 +968,28 @@ local function ApplyLayout()
   local children = { ns.viewer:GetChildren() }
   local n = 0
   local withCooldownID = 0
+  local sizeSource
   for i = 1, #children do
     local child = children[i]
     HookFrame(child) -- idempotent; catches frames created after init
     if child.cooldownID then
+      sizeSource = sizeSource or child
       withCooldownID = withCooldownID + 1
       if not isDynamic or child:IsShown() then
         n = n + 1
         visibleBuf[n] = child
       end
+    else
+      child._arTargetX, child._arTargetY = nil, nil
+      -- Blizzard keeps placeholder items even when no auras are configured
+      if child.layoutIndex then
+        sizeSource = sizeSource or child
+      end
     end
   end
 
-  if n == 0 then
+  if not sizeSource then
+    SetBuffSelectionBounds(ns.viewer, 0, 0)
     return
   end
 
@@ -994,9 +1000,7 @@ local function ApplyLayout()
   local growDown = (db.growDirection == "DOWN")
   local align = db.align
   local isVertical = IsViewerVertical(ns.viewer)
-  local preserveEdge = GetGridPreserveEdge(isVertical, growDown)
-
-  local scale = visibleBuf[1]:GetScale()
+  local scale = sizeSource:GetScale()
   if scale < 0.01 then
     scale = 1
   end
@@ -1004,13 +1008,11 @@ local function ApplyLayout()
   -- SetPoint offsets are in the CHILD's coordinate space and get multiplied
   -- by the child's scale automatically.  Use unscaled dimensions for
   -- positioning so coordinates aren't double-scaled.
-  local iconW = visibleBuf[1]:GetWidth()
-  local iconH = visibleBuf[1]:GetHeight()
-  if iconW < 1 then
-    iconW = 36
-  end
-  if iconH < 1 then
-    iconH = 36
+  local iconW = sizeSource:GetWidth()
+  local iconH = sizeSource:GetHeight()
+  if iconW < 1 or iconH < 1 then
+    SetBuffSelectionBounds(ns.viewer, 0, 0)
+    return
   end
 
   -- Blizzard's iconPadding + additional offset gives the native inter-icon gap
@@ -1021,16 +1023,16 @@ local function ApplyLayout()
   end
 
   local totalIcons = n
-  -- Compute grid dimensions - swap row/col semantics for vertical
+  -- Reserve configured slots in both modes so aura visibility never moves
+  -- the Edit Mode outline; only packing inside the grid is dynamic
+  local lines = math.max(1, math.ceil(withCooldownID / maxPerRow))
   local refCols, refRows
   if isVertical then
-    local numCols = math.ceil(totalIcons / maxPerRow)
-    refCols = isDynamic and math.max(numCols, math.ceil(withCooldownID / maxPerRow)) or numCols
+    refCols = lines
     refRows = maxPerRow
   else
-    local numRows = math.ceil(totalIcons / maxPerRow)
     refCols = maxPerRow
-    refRows = isDynamic and math.max(numRows, math.ceil(withCooldownID / maxPerRow)) or numRows
+    refRows = lines
   end
   local fullRowWidth = refCols * (iconW + spacing) - spacing
 
@@ -1058,21 +1060,16 @@ local function ApplyLayout()
     frame._arSettingPos = false
   end
 
-  -- Viewer size is in the viewer's own coordinate space (not child-scaled),
-  -- so scale up the unscaled grid dimensions.
+  -- Keep the saved anchor independent of the number of configured auras
+  -- Extra rows/columns extend outside that fixed starting footprint
+  -- No screen-coordinate correction or delayed anchor capture is needed
   local totalW = (refCols * (iconW + spacing) - spacing) * scale
   local totalH = (refRows * (iconH + spacing) - spacing) * scale
   if totalW > 0 and totalH > 0 then
-    -- The viewer appears before Blizzard finishes loading the character's
-    -- cooldown layout. Keep its saved Edit Mode point untouched while the
-    -- temporary icon list fills in, then establish the growth edge once.
-    local preserveStableEdge = IsStableEdgeReady(ns.viewer)
-    ApplyViewerSize(ns.viewer, totalW, totalH, preserveEdge, preserveStableEdge)
-    if not preserveStableEdge then
-      if IsCooldownViewerLayoutManagerLoaded() and ScheduleStableEdgeBootstrap then
-        ScheduleStableEdgeBootstrap(ns.viewer)
-      end
-    end
+    local anchorW = isVertical and iconW * scale or totalW
+    local anchorH = isVertical and totalH or iconH * scale
+    SetViewerSize(ns.viewer, anchorW, anchorH)
+    SetBuffSelectionBounds(ns.viewer, totalW - anchorW, totalH - anchorH, isVertical, growDown)
   end
 end
 
@@ -1081,29 +1078,6 @@ end
 -- ---------------------------------------------------------------------------
 
 local ScheduleLayout, CancelScheduledLayout = CreateNextFrameScheduler(ApplyLayout)
-
-ScheduleStableEdgeBootstrap = function(frame)
-  -- Layout manager initialization can issue several RefreshLayout calls in
-  -- one frame. Only the final grid is allowed to establish the stable edge.
-  if stableEdgeBootstrapTimer then
-    stableEdgeBootstrapTimer:Cancel()
-    stableEdgeBootstrapTimer = nil
-  end
-
-  stableEdgeBootstrapTimer = C_Timer.NewTimer(0, function()
-    stableEdgeBootstrapTimer = nil
-    if frame ~= ns.viewer then
-      return
-    end
-    if not IsCooldownViewerLayoutManagerLoaded() then
-      return
-    end
-
-    InvalidateStableEdge(frame)
-    stableEdgeReady[frame] = true
-    ApplyLayout()
-  end)
-end
 
 local function ApplyLayoutFromViewerLayout()
   CancelScheduledLayout()
@@ -1612,6 +1586,7 @@ ns.ViewerKinds = {
     schedule = ScheduleLayout,
     apply = ApplyLayout,
     onLayout = ApplyLayoutFromViewerLayout,
+    onClamp = ClampBuffStartingFootprint,
     retire = RetireViewer,
     onRefreshLayout = function()
       ScheduleStacksRefresh()
@@ -2184,11 +2159,8 @@ end)
 ns._FormatKeyText = FormatKeyText
 ns._CalcGridPosition = CalcGridPosition
 ns._SetViewerSizePreservingEdge = SetViewerSizePreservingEdge
-ns._ApplyViewerSize = ApplyViewerSize
 ns._EnforceViewerSize = EnforceViewerSize
 ns._InvalidateStableEdge = InvalidateStableEdge
-ns._IsCooldownViewerLayoutManagerLoaded = IsCooldownViewerLayoutManagerLoaded
-ns._IsStableEdgeReady = IsStableEdgeReady
 ns._GetGridPreserveEdge = GetGridPreserveEdge
 ns._GetBarsPreserveEdge = GetBarsPreserveEdge
 ns._GetHotkeyText = GetHotkeyText

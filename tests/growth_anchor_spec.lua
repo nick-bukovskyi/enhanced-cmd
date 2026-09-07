@@ -1,4 +1,4 @@
--- Tests for preserving the BuffIconCooldownViewer anchor edge while resizing.
+-- Tests for the edge correction used by bars, Essential, and Utility
 local ns = _G._test_ns
 
 local function hasText(value, text)
@@ -321,37 +321,6 @@ describe("SetViewerSizePreservingEdge", function()
     local _, bottom, _, height = replacementViewer:GetRect()
     expect(bottom).to_equal(378)
     expect(bottom + height).to_equal(418)
-  end)
-end)
-
-describe("Tracked buff startup edge bootstrap", function()
-  local resize = ns._ApplyViewerSize
-
-  it("keeps the saved top anchor until the complete grid establishes its bottom edge", function()
-    local viewer = newViewer("TOPLEFT", 1305, 447, 224, 44, 1)
-
-    resize(viewer, 269, 44, "BOTTOM", false)
-    expect(select(2, viewer:GetRect())).to_equal(447)
-    expect(select(5, viewer:GetPoint(1))).to_equal(0)
-    expect(viewer._ecdmStableEdge).to_be_nil()
-
-    resize(viewer, 269, 89, "BOTTOM", false)
-    expect(select(2, viewer:GetRect())).to_equal(402)
-    expect(select(5, viewer:GetPoint(1))).to_equal(0)
-    expect(viewer._ecdmStableEdge).to_be_nil()
-
-    resize(viewer, 269, 134, "BOTTOM", false)
-    expect(select(2, viewer:GetRect())).to_equal(357)
-    expect(select(5, viewer:GetPoint(1))).to_equal(0)
-    expect(viewer._ecdmStableEdge).to_be_nil()
-
-    resize(viewer, 269, 134, "BOTTOM", true)
-    expect(viewer._ecdmStableEdge).to_equal(357)
-    expect(select(5, viewer:GetPoint(1))).to_equal(0)
-
-    resize(viewer, 269, 89, "BOTTOM", true)
-    expect(select(2, viewer:GetRect())).to_equal(357)
-    expect(select(5, viewer:GetPoint(1))).to_equal(-45)
   end)
 end)
 
